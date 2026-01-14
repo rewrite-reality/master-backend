@@ -15,6 +15,7 @@ import { DatabaseModule } from './core/database/database.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RedisModule } from './core/redis/redis.module';
 
+
 @Module({
 	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, AmocrmModule, EventsModule, JobsModule,
 		ConfigModule,
