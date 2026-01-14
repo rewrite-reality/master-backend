@@ -1,34 +1,31 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Put, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { UsersService } from './users.service';
-import { CreateUserDto } from './dto/create-user.dto';
-import { UpdateUserDto } from './dto/update-user.dto';
+import { CreateProfileDto } from './dto/create-profile.dto';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import type { User } from '@prisma/client';
 
 @Controller('users')
+@UseGuards(JwtAuthGuard)
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+	constructor(private readonly usersService: UsersService) { }
 
-  @Post()
-  create(@Body() createUserDto: CreateUserDto) {
-    return this.usersService.create(createUserDto);
-  }
+	@Get('me')
+	@HttpCode(HttpStatus.OK)
+	async getMe(@CurrentUser() user: User) {
+		return this.usersService.getMe(user.id);
+	}
 
-  @Get()
-  findAll() {
-    return this.usersService.findAll();
-  }
+	@Post('profile')
+	@HttpCode(HttpStatus.CREATED)
+	async createProfile(@CurrentUser() user: User, @Body() createProfileDto: CreateProfileDto) {
+		return this.usersService.createProfile(user.id, createProfileDto);
+	}
 
-  @Get(':id')
-  findOne(@Param('id') id: string) {
-    return this.usersService.findOne(+id);
-  }
-
-  @Patch(':id')
-  update(@Param('id') id: string, @Body() updateUserDto: UpdateUserDto) {
-    return this.usersService.update(+id, updateUserDto);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string) {
-    return this.usersService.remove(+id);
-  }
+	@Put('profile')
+	@HttpCode(HttpStatus.OK)
+	async updateProfile(@CurrentUser() user: User, @Body() updateProfileDto: UpdateProfileDto) {
+		return this.usersService.updateProfile(user.id, updateProfileDto);
+	}
 }
