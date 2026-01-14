@@ -63,6 +63,19 @@ model District {
   @@map("districts")
 }
 
+// Справочник специальностей (Сантехник, Электрик...)
+model Specialty {
+  id       String  @id @default(uuid())
+  name     String // "Сантехник"
+  code     String  @unique // "plumber" (для кода/иконок)
+  isActive Boolean @default(true)
+
+  masters MasterSpecialty[]
+  orders  Order[] // Заказы этой специальности
+
+  @@map("specialties")
+}
+
 model User {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
@@ -112,6 +125,9 @@ model MasterProfile {
   // Связь с районами
   districts   MasterDistrict[] 
 
+  // Связь со специальностями
+  specialties MasterSpecialty[]
+
   orders      Order[]      // История заказов
 
   @@map("master_profiles")
@@ -129,6 +145,20 @@ model MasterDistrict {
 
   @@id([masterId, districtId])
   @@map("masters_districts")
+}
+
+// Таблица связи "Мастер <-> Специальность" (Many-to-Many explicit)
+model MasterSpecialty {
+  masterId String
+  master   MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  specialtyId String
+  specialty   Specialty @relation(fields: [specialtyId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime @default(now())
+
+  @@id([masterId, specialtyId])
+  @@map("master_specialties")
 }
 
 model Order {
@@ -156,6 +186,10 @@ model Order {
   floor        String?      // "5" (Этаж) - нужно, если лифта нет
   apartment    String?      // "12" (Квартира)
   intercom     String?      // "12К" (Домофон)
+
+  // Специальность (ОБЯЗАТЕЛЬНО!)
+  specialtyId String? // Сделал опциональным только для совместимости, но логически должно быть обязательным
+  specialty   Specialty? @relation(fields: [specialtyId], references: [id])
   
   // Суть работы
   title        String       // "Починить кран" (Заголовок из Amo)
@@ -181,6 +215,7 @@ model Order {
   @@index([status])
   @@index([amoLeadId])
   @@index([districtId])
+  @@index([specialtyId])
   @@map("orders")
 }
 

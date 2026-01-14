@@ -28,4 +28,10 @@ export class CreateProfileDto {
 	@IsString({ each: true })
 	// @IsUUID('4', { each: true })
 	districtIds: string[]; // Массив UUID районов
+
+	@IsArray()
+	@ArrayMinSize(1, { message: 'Select at least 1 specialty' })
+	@IsString({ each: true })
+	// @IsUUID('4', { each: true })
+	specialtyIds: string[]; // Массив UUID специальностей
 }

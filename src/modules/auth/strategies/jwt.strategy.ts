@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, Inject } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../../core/database/prisma.service';
+import Redis from 'ioredis';
 
 /**
  * JWT Strategy для проверки токена в защищенных роутах
@@ -15,13 +16,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 	constructor(
 		private readonly config: ConfigService,
 		private readonly prisma: PrismaService,
+		@Inject('REDIS_CLIENT') private readonly redis: Redis,
 	) {
 		super({
 			jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
 			secretOrKey: config.getOrThrow<string>('JWT_SECRET'),
 			ignoreExpiration: false,
 		});
-
 	}
 
 	/**
@@ -30,15 +31,44 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 	 * @returns Объект user, который попадёт в request.user
 	 */
 	async validate(payload: any) {
-		// Payload содержит: { sub: userId, role: 'MASTER', tgId: '123456', iat: ..., exp: ... }
+		// 0. Валидация структуры payload
+		if (!payload.sub || !payload.role || !payload.tgId) {
+			this.logger.error('Invalid JWT payload structure', payload);
+			throw new UnauthorizedException('Invalid token payload');
+		}
 
-		// Проверяем, что токен не сгенерирован для несуществующего юзера
+		// 1. Пробуем получить из кеша
+		const cacheKey = `user:${payload.sub}`;
+		const cachedUser = await this.redis.get(cacheKey);
+
+		if (cachedUser) {
+			const user = JSON.parse(cachedUser);
+
+			// Проверка роли (защита от старых токенов после смены роли)
+			if (user.role !== payload.role) {
+				throw new UnauthorizedException('Role mismatch');
+			}
+
+			// Дополнительная проверка: если юзер заблокирован (для мастеров)
+			if (user.role === 'MASTER' && user.masterProfile?.status === 'BLOCKED') {
+				throw new UnauthorizedException('Your account is blocked');
+			}
+
+			return user;
+		}
+
+		// 2. Cache miss — идем в базу
+		const start = Date.now();
 		const user = await this.prisma.user.findUnique({
 			where: { id: payload.sub },
 			include: {
 				masterProfile: true, // Подгружаем профиль мастера (может быть null)
 			},
 		});
+		const duration = Date.now() - start;
+		if (duration > 50) {
+			this.logger.warn(`Slow DB query in JwtStrategy: ${duration}ms`);
+		}
 
 		if (!user) {
 			this.logger.warn(`Token validation failed: user ${payload.sub} not found`);
@@ -51,7 +81,16 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 			throw new UnauthorizedException('Your account is blocked');
 		}
 
-		// Этот объект попадёт в request.user и будет доступен через @CurrentUser()
+		// 3. Сохраняем в кеш (5 минут)
+		await this.redis.set(
+			cacheKey,
+			JSON.stringify(user, (key, value) =>
+				typeof value === 'bigint' ? value.toString() : value
+			),
+			'EX',
+			300
+		);
+
 		return user;
 	}
 }

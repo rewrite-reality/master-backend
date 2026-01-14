@@ -42,6 +42,13 @@ export class UsersService {
 								},
 							},
 						},
+						specialties: {
+							select: {
+								specialty: {
+									select: { id: true, name: true }
+								},
+							},
+						},
 					},
 				},
 			},
@@ -65,6 +72,7 @@ export class UsersService {
 				phone: user.masterProfile.phone,
 				status: user.masterProfile.status,
 				districts: user.masterProfile.districts.map(d => d.district),
+				specialties: user.masterProfile.specialties.map(s => s.specialty),
 			} : null,
 		};
 	}
@@ -90,6 +98,21 @@ export class UsersService {
 			}
 		}
 
+		// 2.1. Валидация специальностей
+		const uniqueSpecialtyIds = dto.specialtyIds
+			? Array.from(new Set(dto.specialtyIds))
+			: [];
+
+		if (uniqueSpecialtyIds.length > 0) {
+			const specialtiesCount = await this.prisma.specialty.count({
+				where: { id: { in: uniqueSpecialtyIds } },
+			});
+
+			if (specialtiesCount !== uniqueSpecialtyIds.length) {
+				throw new BadRequestException('Invalid specialty IDs');
+			}
+		}
+
 		try {
 			// 3. Создание (атомарно, полагаемся на constraint базы для защиты от дублей)
 			const profile = await this.prisma.masterProfile.create({
@@ -109,6 +132,14 @@ export class UsersService {
 							})),
 						},
 					} : {}),
+
+					...(uniqueSpecialtyIds.length > 0 ? {
+						specialties: {
+							create: uniqueSpecialtyIds.map((specialtyId) => ({
+								specialtyId,
+							})),
+						},
+					} : {}),
 				},
 				select: {
 					id: true,
@@ -121,6 +152,13 @@ export class UsersService {
 						select: {
 							district: {
 								select: { id: true, name: true, city: true },
+							},
+						},
+					},
+					specialties: {
+						select: {
+							specialty: {
+								select: { id: true, name: true },
 							},
 						},
 					},
@@ -158,7 +196,12 @@ export class UsersService {
 			? Array.from(new Set(dto.districtIds))
 			: [];
 
-		if (!hasProfileDataUpdates && !hasDistrictUpdate) {
+		const hasSpecialtyUpdate = dto.specialtyIds !== undefined;
+		const uniqueSpecialtyIds = hasSpecialtyUpdate
+			? Array.from(new Set(dto.specialtyIds))
+			: [];
+
+		if (!hasProfileDataUpdates && !hasDistrictUpdate && !hasSpecialtyUpdate) {
 			this.logger.warn('updateProfile bad request: nothing to update');
 			throw new BadRequestException('Nothing to update');
 		}
@@ -187,6 +230,17 @@ export class UsersService {
 				if (districtsCount !== uniqueDistrictIds.length) {
 					this.logger.warn('updateProfile bad request: invalid district ids');
 					throw new BadRequestException('Invalid district IDs');
+				}
+			}
+
+			if (hasSpecialtyUpdate && uniqueSpecialtyIds.length > 0) {
+				const specialtiesCount = await tx.specialty.count({
+					where: { id: { in: uniqueSpecialtyIds } },
+				});
+
+				if (specialtiesCount !== uniqueSpecialtyIds.length) {
+					this.logger.warn('updateProfile bad request: invalid specialty ids');
+					throw new BadRequestException('Invalid specialty IDs');
 				}
 			}
 
@@ -232,6 +286,21 @@ export class UsersService {
 				profileUpdated = true;
 			}
 
+			if (hasSpecialtyUpdate) {
+				await tx.masterSpecialty.deleteMany({ where: { masterId: profile.id } });
+
+				if (uniqueSpecialtyIds.length > 0) {
+					await tx.masterSpecialty.createMany({
+						data: uniqueSpecialtyIds.map((specialtyId) => ({
+							masterId: profile.id,
+							specialtyId,
+						})),
+					});
+				}
+
+				profileUpdated = true;
+			}
+
 			const updatedProfile = await tx.masterProfile.findUniqueOrThrow({
 				where: { id: profile.id },
 				select: {
@@ -245,6 +314,13 @@ export class UsersService {
 						select: {
 							district: {
 								select: { id: true, name: true, city: true },
+							},
+						},
+					},
+					specialties: {
+						select: {
+							specialty: {
+								select: { id: true, name: true },
 							},
 						},
 					},

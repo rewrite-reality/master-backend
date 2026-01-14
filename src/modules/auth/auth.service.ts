@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../core/database/prisma.service';
 import * as crypto from 'crypto';
+import Redis from 'ioredis';
 
 @Injectable()
 export class AuthService {
@@ -12,7 +13,17 @@ export class AuthService {
 		private config: ConfigService,
 		private jwt: JwtService,
 		private prisma: PrismaService,
+		@Inject('REDIS_CLIENT') private readonly redis: Redis,
 	) { }
+
+	/**
+	 * Инвалидация кеша пользователя
+	 * @param userId ID пользователя
+	 */
+	async invalidateUserCache(userId: string) {
+		await this.redis.del(`user:${userId}`);
+		this.logger.log(`Invalidated cache for user ${userId}`);
+	}
 
 	/**
 	 * Проверяет подпись initData от Telegram Mini App
@@ -59,9 +70,13 @@ export class AuthService {
 			.digest('hex');
 
 		// 3. Сравниваем (timingSafeEqual для защиты от timing attacks)
-		// Важно: calculatedHash и hash должны быть одной длины, иначе timingSafeEqual упадет
-		// Поэтому сначала простая проверка длины, потом криптостойкая
-		if (calculatedHash !== hash) {
+		const calculatedHashBuffer = Buffer.from(calculatedHash, 'hex');
+		const receivedHashBuffer = Buffer.from(hash, 'hex');
+
+		if (
+			calculatedHashBuffer.length !== receivedHashBuffer.length ||
+			!crypto.timingSafeEqual(calculatedHashBuffer, receivedHashBuffer)
+		) {
 			this.logger.warn(`Invalid hash. Calculated: ${calculatedHash}, Received: ${hash}`);
 			throw new UnauthorizedException('Invalid Telegram signature');
 		}
@@ -76,10 +91,12 @@ export class AuthService {
 			const user = JSON.parse(userStr);
 
 			// Дополнительно можно проверить auth_date (защита от replay attacks)
-			// Срок жизни initData — например, 1 день
+			// Срок жизни initData — например, 5 минут (300 сек)
 			const authDate = Number(urlParams.get('auth_date'));
 			const now = Math.floor(Date.now() / 1000);
-			if (now - authDate > 86400) { // 24 часа
+			const maxAge = this.config.get<number>('INIT_DATA_MAX_AGE', 300); // Default 5 min
+
+			if (now - authDate > maxAge) {
 				this.logger.warn('InitData is expired');
 				throw new UnauthorizedException('InitData expired');
 			}
@@ -105,31 +122,30 @@ export class AuthService {
 		// хотя здесь можно и простой findUnique + create
 
 		// Сначала пробуем найти, чтобы не делать лишних write операций
-		let user = await this.prisma.user.findUnique({
+		// 2. Поиск или создание пользователя (upsert - update or insert)
+		// Используем upsert для атомарности и предотвращения race condition
+		const user = await this.prisma.user.upsert({
 			where: { telegramId },
+			create: {
+				telegramId,
+				telegramUsername: tgUser.username || null,
+				telegramChatId: null, // chatId будет заполнен при первом взаимодействии с ботом
+				role: 'MASTER', // Все новые - мастера
+				masterProfile: {
+					create: {
+						// Создаем пустой профиль мастера, чтобы соблюсти инвариант
+						firstName: tgUser.first_name || '',
+						lastName: tgUser.last_name || '',
+						phone: '', // Будет заполнено позже
+						status: 'PENDING',
+					}
+				}
+			},
+			update: {
+				telegramUsername: tgUser.username || null,
+			},
 			include: { masterProfile: true },
 		});
-
-		if (!user) {
-			this.logger.log(`Creating new user for telegramId: ${tgUser.id}`);
-			user = await this.prisma.user.create({
-				data: {
-					telegramId,
-					telegramUsername: tgUser.username || null,
-					telegramChatId: telegramId, // По умолчанию считаем, что chatId = userId (для лички)
-					role: 'MASTER', // Все новые - мастера
-				},
-				include: { masterProfile: true },
-			});
-		} else {
-			// Опционально: обновляем username если сменился
-			if (user.telegramUsername !== tgUser.username) {
-				await this.prisma.user.update({
-					where: { id: user.id },
-					data: { telegramUsername: tgUser.username },
-				});
-			}
-		}
 
 		// 3. Генерация JWT
 		if (!user.telegramId) {

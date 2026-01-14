@@ -1,9 +1,11 @@
-// prisma.config.ts
 import { defineConfig } from '@prisma/config';
+import * as dotenv from 'dotenv'; // <--- Импортируем dotenv
+
+// Явно загружаем переменные из .env файла
+dotenv.config();
 
 export default defineConfig({
 	datasource: {
-		// Явно указываем URL из переменной окружения
-		url: process.env.DATABASE_URL,
+		url: process.env.DATABASE_URL, // Теперь тут будет строка, а не undefined
 	},
 });
