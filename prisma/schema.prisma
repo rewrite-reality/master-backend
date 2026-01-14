@@ -1,0 +1,233 @@
+datasource db {
+  provider = "postgresql"
+  // url удаляем! Теперь он задается в prisma.config.ts
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// ------------------------------------------------------
+// ENUMS (Business Logic Constants)
+// ------------------------------------------------------
+
+enum Role {
+  MANAGER // Менеджер (вход через логин/пароль или SSO)
+  MASTER  // Мастер (вход через Telegram Mini App)
+  ADMIN   // Супер-админ
+}
+
+enum MasterStatus {
+  PENDING   // Регистрация, ждет апрува
+  ACTIVE    // Работает
+  BLOCKED   // Бан (жалобы, фрод)
+  ON_LEAVE  // В отпуске (не участвует в гонках)
+}
+
+enum OrderStatus {
+  PENDING     // 1. Поиск исполнителя (Race Mode)
+  ASSIGNED    // 2. Мастер найден, едет
+  ARRIVED     // 3. Мастер на месте (опционально)
+  IN_PROGRESS // 4. Работает
+  COMPLETED   // 5. Успешно завершено
+  CANCELLED   // 6. Отмена клиентом/менеджером
+  DISPUTE     // 7. Проблема (мастер не приехал, клиент недоволен)
+}
+
+enum DispatchMode {
+  MANUAL // Ручное назначение менеджером
+  RACE   // "Гонка": кто первый нажал, того и заказ
+}
+
+enum PaymentType {
+  CASH
+  CARD_ONLINE
+  TRANSFER
+}
+
+// ------------------------------------------------------
+// MODELS
+// ------------------------------------------------------
+
+// Справочник районов (чтобы не хардкодить строки)
+model District {
+  id        String   @id @default(uuid())
+  name      String   // "Центральный", "Ленинский"
+  city      String   @default("Chelyabinsk") 
+  isActive  Boolean  @default(true) // Можно временно отключить район
+
+  masters   MasterDistrict[] // Связь многие-ко-многим с мастерами
+  orders    Order[]          // Заказы в этом районе
+
+  @@unique([city, name]) // Нельзя создать два "Центральных" в одном городе
+  @@map("districts")
+}
+
+model User {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // --- Auth & Identity ---
+  role Role @default(MASTER)
+
+  // Telegram (для Мастеров)
+  telegramId       BigInt?  @unique // BigInt, т.к. ID может быть > 2^31
+  telegramUsername String?
+  telegramChatId   BigInt?  // Для отправки уведомлений (может отличаться от ID пользователя)
+  
+  // Login/Pass (для Менеджеров/Админов)
+  email            String?  @unique
+  passwordHash     String?  // Argon2 hash
+
+  // --- Relations ---
+  masterProfile    MasterProfile?
+  
+  // Logs & Audits
+  actions          AuditLog[]      // Что делал этот юзер
+  
+  @@index([telegramId])
+  @@map("users")
+}
+
+model MasterProfile {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  firstName  String  // Иван
+  lastName   String  // Иванов
+  patronymic String? // Иванович (может не быть)
+  phone    String // Телефон для связи с менеджером (не клиента!)
+  
+  status      MasterStatus @default(PENDING)
+  rating      Float        @default(5.0) // 1.0 - 5.0
+  reviewCount Int          @default(0)
+  
+  balance     Decimal      @default(0) @db.Decimal(10, 2)
+  
+  // Настройки "Гонки"
+  autoAccept  Boolean      @default(false) // Авто-принятие (на будущее)
+  
+  // Связь с районами
+  districts   MasterDistrict[] 
+
+  orders      Order[]      // История заказов
+
+  @@map("master_profiles")
+}
+
+// Таблица связи "Мастер <-> Район" (Many-to-Many explicit)
+model MasterDistrict {
+  masterId   String
+  master     MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+  
+  districtId String
+  district   District      @relation(fields: [districtId], references: [id], onDelete: Cascade)
+
+  assignedAt DateTime      @default(now())
+
+  @@id([masterId, districtId])
+  @@map("masters_districts")
+}
+
+model Order {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // --- AmoCRM Integration (Source of Truth link) ---
+  amoLeadId     String? @unique  // ID сделки (Leads). Уникально!
+  amoContactId  String?          // ID контакта
+  amoPipelineId String?          // ID воронки
+  amoLink       String?          // Ссылка на CRM для удобства
+
+  // --- Order Details ---
+  status       OrderStatus  @default(PENDING)
+  dispatchMode DispatchMode @default(RACE)
+  
+  // Локация
+  districtId   String
+  district     District     @relation(fields: [districtId], references: [id])
+  city         String       @default("Chelyabinsk") // Чтобы не путать улицы
+  street       String       // "Ленина"
+  house        String       // "15а"
+  entrance     String?      // "1" (Подъезд) - нужно мастеру!
+  floor        String?      // "5" (Этаж) - нужно, если лифта нет
+  apartment    String?      // "12" (Квартира)
+  intercom     String?      // "12К" (Домофон)
+  
+  // Суть работы
+  title        String       // "Починить кран" (Заголовок из Amo)
+  description  String       @db.Text // Подробности
+  price        Decimal?     @db.Decimal(10, 2) // Цена работ (предварительная)
+  paymentType  PaymentType  @default(CASH)
+
+  // Данные клиента (Скрыты от мастера до назначения)
+  clientName   String?
+  clientPhone  String?      // "+7900..."
+
+  // Время
+  scheduledAt  DateTime?    // Желаемое время (null = сейчас)
+  deadlineAt   DateTime?    // Крайний срок (для SLA)
+
+  // --- Relations ---
+  masterId     String?
+  master       MasterProfile? @relation(fields: [masterId], references: [id])
+
+  // История изменений (кто принял, когда закрыл)
+  logs         OrderLog[]
+
+  @@index([status])
+  @@index([amoLeadId])
+  @@index([districtId])
+  @@map("orders")
+}
+
+// ------------------------------------------------------
+// LOGS & AUDIT (Безопасность и отладка)
+// ------------------------------------------------------
+
+model OrderLog {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  message   String   // "Статус изменен на ASSIGNED"
+  meta      Json?    // { "prevStatus": "PENDING", "masterId": "..." }
+
+  @@map("order_logs")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+
+  action    String   // "LOGIN", "ACCEPT_ORDER", "CHANGE_PROFILE"
+  ip        String?
+  details   Json?    // { "userAgent": "..." }
+
+  @@map("audit_logs")
+}
+
+// Лог вебхуков (сырые данные для разбора полетов)
+model IntegrationEvent {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  
+  source    String   // "AMOCRM"
+  direction String   // "INCOMING"
+  event     String   // "leads.status_update"
+  
+  payload   Json     // Весь JSON, который пришел
+  error     String?  // Если упало при обработке
+  isSuccess Boolean  @default(true)
+  
+  @@index([createdAt])
+  @@map("integration_events")
+}

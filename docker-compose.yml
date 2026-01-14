@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  # 1. База данных PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: master_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-user} # Берет из .env или дефолт 'user'
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password} # Берет из .env или дефолт 'password'
+      POSTGRES_DB: ${POSTGRES_DB:-master_na_chas}
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: always
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U user -d master_na_chas" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # 2. Redis (для очередей BullMQ, кеша и сессий)
+  redis:
+    image: redis:7-alpine
+    container_name: master_redis
+    ports:
+      - '6379:6379'
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-root} # Пароль для безопасности
+    volumes:
+      - redis_data:/data
+    restart: always
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-root}", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  # 3. Prisma Studio (GUI для просмотра базы, опционально, но удобно)
+  # studio:
+  #   image: node:18-alpine
+  #   container_name: master_prisma_studio
+  #   working_dir: /app
+  #   volumes:
+  #     - ./prisma:/app/prisma
+  #     - ./.env:/app/.env
+  #   command: npx prisma studio
+  #   ports:
+  #     - '5555:5555'
+  #   depends_on:
+  #     - postgres
+
+volumes:
+  postgres_data:
+  redis_data:
