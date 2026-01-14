@@ -26,6 +26,6 @@ export class CreateProfileDto {
 	@IsArray()
 	@ArrayMinSize(1, { message: 'Select at least 1 district' })
 	@IsString({ each: true })
-	@IsUUID('4', { each: true })
+	// @IsUUID('4', { each: true })
 	districtIds: string[]; // Массив UUID районов
 }

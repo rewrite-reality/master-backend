@@ -77,6 +77,7 @@ export class UsersService {
 		const uniqueDistrictIds = dto.districtIds
 			? Array.from(new Set(dto.districtIds))
 			: [];
+		const patronymic = typeof dto.patronymic === 'string' ? dto.patronymic.trim() : '';
 
 		// 2. Валидация районов (если есть)
 		if (uniqueDistrictIds.length > 0) {
@@ -97,7 +98,7 @@ export class UsersService {
 					firstName: dto.firstName,
 					lastName: dto.lastName,
 					// Нормализация: пустая строка -> null
-					patronymic: dto.patronymic ? dto.patronymic : null,
+					patronymic: patronymic === '' ? null : patronymic,
 					phone: dto.phone,
 					status: MasterStatus.PENDING,
 
@@ -109,8 +110,20 @@ export class UsersService {
 						},
 					} : {}),
 				},
-				include: {
-					districts: { include: { district: true } },
+				select: {
+					id: true,
+					firstName: true,
+					lastName: true,
+					patronymic: true,
+					phone: true,
+					status: true,
+					districts: {
+						select: {
+							district: {
+								select: { id: true, name: true, city: true },
+							},
+						},
+					},
 				},
 			});
 
@@ -130,14 +143,24 @@ export class UsersService {
 	 * Обновить профиль мастера
 	 */
 	async updateProfile(userId: string, dto: UpdateProfileDto) {
-		// Collect only provided fields (avoid undefined writes)
-		const dataToUpdate: Prisma.MasterProfileUpdateInput = {};
+		const dataToUpdate: Prisma.MasterProfileUpdateManyMutationInput = {};
 		if (dto.firstName !== undefined) dataToUpdate.firstName = dto.firstName;
 		if (dto.lastName !== undefined) dataToUpdate.lastName = dto.lastName;
 		if (dto.phone !== undefined) dataToUpdate.phone = dto.phone;
-		// patronymic: null for empty string, skip when undefined
 		if (dto.patronymic !== undefined) {
-			dataToUpdate.patronymic = dto.patronymic ? dto.patronymic : null;
+			const patronymicValue = typeof dto.patronymic === 'string' ? dto.patronymic.trim() : '';
+			dataToUpdate.patronymic = patronymicValue === '' ? null : patronymicValue;
+		}
+
+		const hasProfileDataUpdates = Object.keys(dataToUpdate).length > 0;
+		const hasDistrictUpdate = dto.districtIds !== undefined;
+		const uniqueDistrictIds = hasDistrictUpdate
+			? Array.from(new Set(dto.districtIds))
+			: [];
+
+		if (!hasProfileDataUpdates && !hasDistrictUpdate) {
+			this.logger.warn('updateProfile bad request: nothing to update');
+			throw new BadRequestException('Nothing to update');
 		}
 
 		return this.prisma.$transaction(async (tx) => {
@@ -151,68 +174,88 @@ export class UsersService {
 				throw new NotFoundException('Profile not found');
 			}
 
-			const ensureNotBlocked = async () => {
-				const current = await tx.masterProfile.findUnique({
-					where: { id: profile.id },
-					select: { status: true },
+			if (profile.status === MasterStatus.BLOCKED) {
+				this.logger.warn('updateProfile forbidden: profile blocked');
+				throw new ForbiddenException('Account blocked');
+			}
+
+			if (hasDistrictUpdate && uniqueDistrictIds.length > 0) {
+				const districtsCount = await tx.district.count({
+					where: { id: { in: uniqueDistrictIds } },
 				});
 
-				if (!current) {
-					this.logger.warn(`Profile for user ${userId} disappeared during updateProfile`);
-					throw new NotFoundException('Profile not found');
+				if (districtsCount !== uniqueDistrictIds.length) {
+					this.logger.warn('updateProfile bad request: invalid district ids');
+					throw new BadRequestException('Invalid district IDs');
 				}
+			}
 
-				if (current.status === MasterStatus.BLOCKED) {
-					this.logger.warn(`Blocked account update attempt for user ${userId}`);
+			let profileUpdated = false;
+
+			if (hasProfileDataUpdates) {
+				const updateResult = await tx.masterProfile.updateMany({
+					where: { id: profile.id, status: { not: MasterStatus.BLOCKED } },
+					data: dataToUpdate,
+				});
+
+				if (updateResult.count === 0) {
+					this.logger.warn('updateProfile forbidden: profile blocked');
 					throw new ForbiddenException('Account blocked');
 				}
-			};
 
-			await ensureNotBlocked();
+				profileUpdated = true;
+			} else {
+				// Guard to ensure profile not blocked before district rewrite
+				const guardResult = await tx.masterProfile.updateMany({
+					where: { id: profile.id, status: { not: MasterStatus.BLOCKED } },
+					data: { balance: { increment: 0 } },
+				});
 
-			// 1. Update districts if provided (with validation)
-			if (dto.districtIds !== undefined) {
-				const uniqueDistrictIds = Array.from(new Set(dto.districtIds));
-
-				if (uniqueDistrictIds.length > 0) {
-					const count = await tx.district.count({ where: { id: { in: uniqueDistrictIds } } });
-					if (count !== uniqueDistrictIds.length) {
-						this.logger.warn(`Invalid districts provided by user ${userId} in updateProfile`);
-						throw new BadRequestException('Invalid district IDs');
-					}
+				if (guardResult.count === 0) {
+					this.logger.warn('updateProfile forbidden: profile blocked');
+					throw new ForbiddenException('Account blocked');
 				}
+			}
 
-				await ensureNotBlocked();
+			if (hasDistrictUpdate) {
 				await tx.masterDistrict.deleteMany({ where: { masterId: profile.id } });
 
 				if (uniqueDistrictIds.length > 0) {
 					await tx.masterDistrict.createMany({
-						data: uniqueDistrictIds.map(id => ({ masterId: profile.id, districtId: id })),
-						skipDuplicates: true,
+						data: uniqueDistrictIds.map((districtId) => ({
+							masterId: profile.id,
+							districtId,
+						})),
 					});
 				}
+
+				profileUpdated = true;
 			}
 
-			// 2. Update profile scalar fields when provided
-			if (Object.keys(dataToUpdate).length > 0) {
-				await ensureNotBlocked();
-				const updated = await tx.masterProfile.update({
-					where: { id: profile.id },
-					data: dataToUpdate,
-					include: { districts: { include: { district: true } } },
-				});
-
-				this.logger.log(`Updated MasterProfile for user ${userId}`);
-				return updated;
-			}
-
-			const currentProfile = await tx.masterProfile.findUniqueOrThrow({
+			const updatedProfile = await tx.masterProfile.findUniqueOrThrow({
 				where: { id: profile.id },
-				include: { districts: { include: { district: true } } },
+				select: {
+					id: true,
+					firstName: true,
+					lastName: true,
+					patronymic: true,
+					phone: true,
+					status: true,
+					districts: {
+						select: {
+							district: {
+								select: { id: true, name: true, city: true },
+							},
+						},
+					},
+				},
 			});
 
-			this.logger.log(`Updated MasterProfile for user ${userId}`);
-			return currentProfile;
+			if (profileUpdated) {
+				this.logger.log(`Updated MasterProfile for user ${userId}`);
+			}
+
+			return updatedProfile;
 		});
 	}
 
