@@ -1,14 +1,17 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import { Controller, Post, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { AuthService } from './auth.service';
-
+import { LoginDto } from './dto/login.dto'; // +
+/**
+ * Контроллер авторизации
+ * Отвечает за вход через Telegram Mini App
+ */
 @Controller('auth')
 export class AuthController {
-	constructor(private authService: AuthService) { }
+	constructor(private readonly authService: AuthService) { }
 
-	// POST /auth/login
-	// Body: { "initData": "query_id=...&user={...}&hash=..." }
 	@Post('login')
-	async login(@Body('initData') initData: string) {
-		return this.authService.login(initData);
+	@HttpCode(HttpStatus.OK)
+	async login(@Body() loginDto: LoginDto) { // Используем DTO
+		return this.authService.login(loginDto.initData);
 	}
 }

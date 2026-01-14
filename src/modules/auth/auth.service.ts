@@ -132,10 +132,14 @@ export class AuthService {
 		}
 
 		// 3. Генерация JWT
+		if (!user.telegramId) {
+			throw new Error('User does not have telegramId');
+		}
+
 		const payload = {
-			sub: user.id, // Subject (ID пользователя)
+			sub: user.id,
 			role: user.role,
-			tgId: user.telegramId.toString(), // BigInt сериализуем в строку
+			tgId: user.telegramId.toString(),
 		};
 
 		const accessToken = this.jwt.sign(payload);
