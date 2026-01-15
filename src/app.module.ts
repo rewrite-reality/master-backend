@@ -7,7 +7,7 @@ import { UsersModule } from './modules/users/users.module';
 import { OrdersModule } from './modules/orders/orders.module';
 import { DispatchModule } from './modules/dispatch/dispatch.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
-import { AmocrmModule } from './modules/integrations/amocrm/amocrm.module';
+import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { EventsModule } from './events/events.module';
 import { JobsModule } from './jobs/jobs.module';
 import { ConfigModule } from './core/config/config.module';
@@ -17,7 +17,7 @@ import { RedisModule } from './core/redis/redis.module';
 
 
 @Module({
-	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, AmocrmModule, EventsModule, JobsModule,
+	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, IntegrationsModule, EventsModule, JobsModule,
 		ConfigModule,
 		DatabaseModule,
 		RedisModule,
