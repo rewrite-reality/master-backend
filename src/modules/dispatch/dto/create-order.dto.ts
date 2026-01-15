@@ -21,6 +21,10 @@ export class CreateOrderDto {
 	@IsOptional()
 	description?: string;
 
+	@IsString()
+	@IsOptional()
+	amoLeadId?: string;
+
 	// @IsUUID()
 	@IsNotEmpty()
 	districtId: string;

@@ -6,8 +6,8 @@ import { ConfigService } from '@nestjs/config';
 import { IdempotencyService } from '../idempotency/idempotency.service';
 import { DadataService } from '../dadata/dadata.service';
 import { PrismaService } from '../../../core/database/prisma.service';
-import { DispatchMode, OrderStatus, PaymentType } from '@prisma/client';
-// import { DispatchService } from '../../dispatch/dispatch.service'; // Using Prisma directly as DispatchService doesn't support amoLeadId yet
+import { DispatchMode, PaymentType } from '@prisma/client';
+import { DispatchService } from '../../dispatch/dispatch.service';
 
 @Injectable()
 export class AmoCrmService {
@@ -16,6 +16,7 @@ export class AmoCrmService {
 
 	constructor(
 		private readonly prisma: PrismaService,
+		private readonly dispatchService: DispatchService,
 		private readonly idempotency: IdempotencyService,
 		private readonly dadata: DadataService,
 		private readonly mapper: AmoCrmMapper,
@@ -182,33 +183,22 @@ export class AmoCrmService {
 		}
 
 		// 5. Create Order
-		const order = await this.prisma.order.create({
-			data: {
-				amoLeadId: parsed.amoId,
-				title: parsed.title,
-				description: parsed.description || '',
-				price: parsed.price,
-				paymentType: (parsed.paymentType as PaymentType) || PaymentType.CASH,
-
-				// Location
-				districtId: districtId!,
-				city: address.city || 'Chelyabinsk',
-				street: address.street,
-				house: address.house || '',
-				apartment: address.flat,
-
-				// Specialty
-				specialtyId: specialtyId,
-
-				// Defaults
-				status: OrderStatus.PENDING,
-				dispatchMode: DispatchMode.RACE,
-
-				clientName: parsed.clientName || 'Unknown (Amo)',
-				clientPhone: parsed.clientPhone || '',
-
-				scheduledAt: parsed.scheduledAt,
-			},
+		const order = await this.dispatchService.createOrder({
+			amoLeadId: parsed.amoId,
+			title: parsed.title,
+			description: parsed.description || '',
+			price: parsed.price,
+			paymentType: (parsed.paymentType as PaymentType) || PaymentType.CASH,
+			districtId: districtId!,
+			city: address.city || 'Chelyabinsk',
+			street: address.street,
+			house: address.house || '',
+			apartment: address.flat ?? undefined,
+			specialtyId: specialtyId ?? undefined,
+			dispatchMode: DispatchMode.RACE,
+			clientName: parsed.clientName || 'Unknown (Amo)',
+			clientPhone: parsed.clientPhone || '',
+			scheduledAt: parsed.scheduledAt ?? undefined,
 		});
 
 		this.logger.log(`Created Order ${order.id} from AmoCRM lead ${originalId}`);

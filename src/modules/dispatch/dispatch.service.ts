@@ -15,6 +15,7 @@ export class DispatchService {
 	async createOrder(dto: CreateOrderDto) {
 		const order = await this.prisma.order.create({
 			data: {
+				amoLeadId: dto.amoLeadId ?? null,
 				title: dto.title,
 				description: dto.description || '',
 				district: { connect: { id: dto.districtId } },

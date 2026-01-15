@@ -6,9 +6,10 @@ import { AmoCrmMapper } from './amocrm/amocrm.mapper';
 import { AmoCrmApiService } from './amocrm/amocrm.api.service';
 import { IdempotencyService } from './idempotency/idempotency.service';
 import { DadataService } from './dadata/dadata.service';
+import { DispatchModule } from '../dispatch/dispatch.module';
 
 @Module({
-	imports: [ConfigModule],
+	imports: [ConfigModule, DispatchModule],
 	controllers: [AmoCrmController],
 	providers: [
 		IdempotencyService,
