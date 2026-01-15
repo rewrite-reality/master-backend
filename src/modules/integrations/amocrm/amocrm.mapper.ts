@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { AmoLeadDto, AmoCustomFieldDto } from './dto/amocrm-webhook.dto';
+import { AmoLeadDto } from './dto/amocrm-webhook.dto';
 import { AMO_FIELD_IDS, AMO_PAYMENT_MAP, AMO_SPECIALTY_MAP } from './amocrm.constants';
 
 export interface ParsedLeadData {
@@ -10,7 +10,9 @@ export interface ParsedLeadData {
 	specialtyCode: string | null;
 	paymentType: string | null; // Will map to Prisma enum later
 	description: string | null;
-	scheduledAt: Date | null;
+	scheduledAt: string | null;
+	clientName: string;
+	clientPhone: string | null;
 }
 
 @Injectable()
@@ -27,6 +29,8 @@ export class AmoCrmMapper {
 			paymentType: this.getMappedValue(lead, AMO_FIELD_IDS.PAYMENT, AMO_PAYMENT_MAP),
 			description: this.getValueByFieldId(lead, AMO_FIELD_IDS.DESCRIPTION),
 			scheduledAt: this.parseTimestamp(this.getValueByFieldId(lead, AMO_FIELD_IDS.TIME)),
+			clientName: 'Unknown (Amo)',
+			clientPhone: null,
 		};
 	}
 
@@ -51,6 +55,14 @@ export class AmoCrmMapper {
 			return null;
 		};
 
+		const mainContact = apiLead._embedded?.contacts?.[0] || null;
+		const clientName = mainContact?.name || 'Unknown (Amo)';
+		const clientPhone = this.extractPhoneFromContact(mainContact);
+
+		this.logger.log(
+			`Mapping AmoCRM lead ${apiLead.id}: contactId='${mainContact?.id ?? 'none'}', contact='${clientName}', phone='${clientPhone ?? 'null'}'`,
+		);
+
 		return {
 			amoId: String(apiLead.id),
 			title: apiLead.name,
@@ -60,7 +72,19 @@ export class AmoCrmMapper {
 			paymentType: getMappedVal(AMO_FIELD_IDS.PAYMENT, AMO_PAYMENT_MAP),
 			description: getFieldVal(AMO_FIELD_IDS.DESCRIPTION),
 			scheduledAt: this.parseTimestamp(getFieldVal(AMO_FIELD_IDS.TIME)),
+			clientName,
+			clientPhone,
 		};
+	}
+
+	private extractPhoneFromContact(contact: any): string | null {
+		if (!contact?.custom_fields_values) return null;
+
+		const phoneField = contact.custom_fields_values.find((field: any) =>
+			['PHONE', 'MOBILE'].includes(String(field.field_code || '').toUpperCase()),
+		);
+		if (!phoneField || !phoneField.values || phoneField.values.length === 0) return null;
+		return phoneField.values[0].value ? String(phoneField.values[0].value) : null;
 	}
 
 	private getValueByFieldId(lead: AmoLeadDto, fieldId: number): string | null {
@@ -94,11 +118,34 @@ export class AmoCrmMapper {
 		return null;
 	}
 
-	private parseTimestamp(val: string | null): Date | null {
+	private parseTimestamp(val: string | null): string | null {
 		if (!val) return null;
 		const num = Number(val);
 		if (isNaN(num)) return null;
-		// AmoCRM typically sends Unix timestamp (seconds)
-		return new Date(num * 1000);
+
+		const formatter = new Intl.DateTimeFormat('en-CA', {
+			timeZone: 'Asia/Yekaterinburg',
+			year: 'numeric',
+			month: '2-digit',
+			day: '2-digit',
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hour12: false,
+		});
+
+		const parts = formatter.formatToParts(new Date(num * 1000)).reduce((acc, part) => {
+			if (part.type !== 'literal') {
+				acc[part.type] = part.value;
+			}
+			return acc;
+		}, {} as Record<string, string>);
+
+		if (!parts.year || !parts.month || !parts.day || !parts.hour || !parts.minute || !parts.second) {
+			return null;
+		}
+
+		// Asia/Yekaterinburg is UTC+05:00 without DST
+		return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}.000+05:00`;
 	}
 }

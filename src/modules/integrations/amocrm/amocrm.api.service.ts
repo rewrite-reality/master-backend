@@ -36,4 +36,28 @@ export class AmoCrmApiService {
 			return null;
 		}
 	}
+
+	async getContactById(contactId: string | number): Promise<any> {
+		if (!this.subdomain || !this.accessToken) {
+			this.logger.error('Missing AmoCRM configuration (SUBDOMAIN or ACCESS_TOKEN)');
+			return null;
+		}
+
+		try {
+			const url = `https://${this.subdomain}.amocrm.ru/api/v4/contacts/${contactId}`;
+			const response = await axios.get(url, {
+				headers: {
+					Authorization: `Bearer ${this.accessToken}`,
+				},
+			});
+
+			return response.data;
+		} catch (error: any) {
+			this.logger.error(
+				`Failed to fetch contact ${contactId} from AmoCRM API: ${error.message}`,
+				error.response?.data,
+			);
+			return null;
+		}
+	}
 }
