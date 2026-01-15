@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, Logger, Inject } from '@nestjs/commo
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../core/database/prisma.service';
+import { verifyTelegramInitData } from '../../core/telegram/init-data';
 import * as crypto from 'crypto';
 import Redis from 'ioredis';
 
@@ -30,83 +31,87 @@ export class AuthService {
 	 * @param initData Строка initData (raw)
 	 * @returns Объект user из initData
 	 */
+
 	validateTelegramInitData(initData: string): any {
 		if (!initData) {
 			throw new UnauthorizedException('Missing initData');
 		}
 
-		const urlParams = new URLSearchParams(initData);
-		const hash = urlParams.get('hash');
-
-		if (!hash) {
-			throw new UnauthorizedException('Missing hash in initData');
-		}
-
-		// Удаляем hash, так как он не участвует в подписи
-		urlParams.delete('hash');
-
-		// Сортируем параметры по алфавиту: key=value\n
-		const dataCheckString = Array.from(urlParams.entries())
-			.sort(([a], [b]) => a.localeCompare(b))
-			.map(([key, value]) => `${key}=${value}`)
-			.join('\n');
-
-		// 1. Создаём секретный ключ на основе токена бота
-		const botToken = this.config.get<string>('TELEGRAM_BOT_TOKEN');
-		if (!botToken) {
-			this.logger.error('TELEGRAM_BOT_TOKEN is not defined in env');
-			throw new Error('Internal server configuration error');
-		}
-
-		const secretKey = crypto
-			.createHmac('sha256', 'WebAppData')
-			.update(botToken)
-			.digest();
-
-		// 2. Считаем хеш от dataCheckString
-		const calculatedHash = crypto
-			.createHmac('sha256', secretKey)
-			.update(dataCheckString)
-			.digest('hex');
-
-		// 3. Сравниваем (timingSafeEqual для защиты от timing attacks)
-		const calculatedHashBuffer = Buffer.from(calculatedHash, 'hex');
-		const receivedHashBuffer = Buffer.from(hash, 'hex');
-
-		if (
-			calculatedHashBuffer.length !== receivedHashBuffer.length ||
-			!crypto.timingSafeEqual(calculatedHashBuffer, receivedHashBuffer)
-		) {
-			this.logger.warn(`Invalid hash. Calculated: ${calculatedHash}, Received: ${hash}`);
-			throw new UnauthorizedException('Invalid Telegram signature');
-		}
-
-		// Парсим данные пользователя
-		const userStr = urlParams.get('user');
-		if (!userStr) {
-			throw new UnauthorizedException('No user data in initData');
-		}
+		// на всякий: иногда прилетает tgWebAppData=...
+		const cleaned = initData.startsWith('tgWebAppData=')
+			? initData.slice('tgWebAppData='.length)
+			: initData;
 
 		try {
-			const user = JSON.parse(userStr);
+			const parsed = verifyTelegramInitData(cleaned);
 
-			// Дополнительно можно проверить auth_date (защита от replay attacks)
-			// Срок жизни initData — например, 5 минут (300 сек)
-			const authDate = Number(urlParams.get('auth_date'));
-			const now = Math.floor(Date.now() / 1000);
-			const maxAge = this.config.get<number>('INIT_DATA_MAX_AGE', 300); // Default 5 min
+			// parsed.user — объект Telegram user
+			const user = parsed?.user;
 
-			if (now - authDate > maxAge) {
-				this.logger.warn('InitData is expired');
-				throw new UnauthorizedException('InitData expired');
+			if (!user || typeof user !== 'object') {
+				throw new UnauthorizedException('No user data in initData');
+			}
+
+			// optional anti-replay (в секундах)
+			const authDate = (parsed as any)?.authDate;
+			if (typeof authDate === 'number') {
+				const nowSec = Math.floor(Date.now() / 1000);
+				const maxAge =
+					Number(this.config.get<string>('INIT_DATA_MAX_AGE')) || 3600;
+
+				if (nowSec - authDate > maxAge) {
+					this.logger.warn(
+						`InitData is expired. now=${nowSec}, auth_date=${authDate}, age=${nowSec - authDate}, maxAge=${maxAge}`,
+					);
+					throw new UnauthorizedException('InitData expired');
+				}
 			}
 
 			return user;
-		} catch (e) {
-			this.logger.error('Failed to parse user JSON', e);
-			throw new UnauthorizedException('Invalid user data format');
+		} catch (e: any) {
+			// validate() кидает ошибку — превращаем в 401
+			this.logger.warn(`Invalid initData: ${e?.message ?? e}`);
+			throw new UnauthorizedException('Invalid Telegram signature');
 		}
 	}
+
+
+	private normalizeInitData(rawInitData: string): string {
+		let normalized = rawInitData.trim();
+
+		if (normalized.startsWith('tgWebAppData=')) {
+			normalized = normalized.slice('tgWebAppData='.length);
+		}
+
+		const looksEncoded = /%(3D|26|2B|7B|7D|22|25)/i.test(normalized);
+		if (looksEncoded) {
+			try {
+				const decoded = decodeURIComponent(normalized);
+				if (decoded.includes('=') && decoded.includes('&')) {
+					normalized = decoded;
+				}
+			} catch (error) {
+				this.logger.warn(`Failed to decode initData, using raw value. Reason: ${(error as Error).message}`);
+			}
+		}
+
+		return normalized;
+	}
+
+	private safeDecodeURIComponent(value: string): string {
+		try {
+			return decodeURIComponent(value);
+		} catch {
+			return value;
+		}
+	}
+
+	private getInitDataMaxAge(): number {
+		const configured = this.config.get('INIT_DATA_MAX_AGE');
+		const parsed = typeof configured === 'string' ? Number(configured) : Number(configured);
+		return Number.isFinite(parsed) && parsed > 0 ? parsed : 3600;
+	}
+
 
 	/**
 	 * Основной метод логина

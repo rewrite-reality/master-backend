@@ -8,19 +8,24 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 async function bootstrap() {
 	const app = await NestFactory.create(AppModule);
 
+	// ✅ CORS (обязательно для Telegram/браузера + ngrok)
+	app.enableCors({
+		origin: true, // можно потом зажать до конкретных доменов
+		credentials: true,
+		methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+		allowedHeaders: ['Content-Type', 'Authorization', 'ngrok-skip-browser-warning'],
+	});
+
 	// 1. JSON body parser
 	app.use(express.json());
 
-	// 2. Form-data / x-www-form-urlencoded parser
-	// extended: true нужен для leads[add][0]
+	// 2. x-www-form-urlencoded parser
 	app.use(express.urlencoded({ extended: true }));
 
 	// 3. Global validation
 	app.useGlobalPipes(new ValidationPipe({ transform: true }));
 
-	// =========================
-	// 🔥 Swagger / OpenAPI
-	// =========================
+	// Swagger
 	const config = new DocumentBuilder()
 		.setTitle('Dispatch API')
 		.setDescription('Backend API for Dispatch / AmoCRM / Masters')
@@ -38,14 +43,11 @@ async function bootstrap() {
 	const document = SwaggerModule.createDocument(app, config);
 	SwaggerModule.setup('docs', app, document);
 
-	// (опционально, но очень удобно)
-	// JSON-спека для фронта / Postman / CI
 	app.getHttpAdapter().get('/openapi.json', (req, res) => {
 		res.json(document);
 	});
 
-	// =========================
-
-	await app.listen(3000);
+	// ✅ важно: чтобы ngrok мог достучаться (не только localhost)
+	await app.listen(3000, '0.0.0.0');
 }
 bootstrap();
