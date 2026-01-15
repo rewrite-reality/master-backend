@@ -14,6 +14,8 @@ import { ConfigModule } from './core/config/config.module';
 import { DatabaseModule } from './core/database/database.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { RedisModule } from './core/redis/redis.module';
+import { DistrictsModule } from './modules/districts/districts.module';
+import { SpecialtiesModule } from './modules/specialties/specialties.module';
 
 
 @Module({
@@ -24,7 +26,9 @@ import { RedisModule } from './core/redis/redis.module';
 		EventEmitterModule.forRoot({
 			wildcard: true,
 			delimiter: '.',
-		})],
+		}),
+		DistrictsModule,
+		SpecialtiesModule],
 	controllers: [AppController],
 	providers: [AppService],
 })
