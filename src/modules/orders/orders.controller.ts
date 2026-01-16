@@ -5,7 +5,6 @@ import {
 	Param,
 	Query,
 	UseGuards,
-	ParseUUIDPipe,
 	HttpCode,
 } from '@nestjs/common';
 import { OrdersService } from './orders.service';
@@ -14,6 +13,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GetOrdersQueryDto } from './dto/get-orders-query.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
 import { AcceptOrderResponseDto } from './dto/accept-order-response.dto';
+import { AdvanceOrderResponseDto } from './dto/advance-order-response.dto';
 
 @Controller('orders')
 @UseGuards(JwtAuthGuard)
@@ -25,7 +25,7 @@ export class OrdersController {
 		@CurrentUser() user: { id: string },
 		@Query() query: GetOrdersQueryDto,
 	): Promise<OrderResponseDto[]> {
-		console.log('🔍 [OrdersController] User from @CurrentUser():', user?.id);
+		console.log('à?"? [OrdersController] User from @CurrentUser():', user?.id);
 		return this.ordersService.findAvailableOrders(user.id, query);
 	}
 
@@ -35,7 +35,7 @@ export class OrdersController {
 		@Param('id') id: string,
 		// @Param('id', ParseUUIDPipe) id: string,
 	): Promise<OrderResponseDto> {
-		console.log('🔍 [OrdersController] User from @CurrentUser():', user?.id);
+		console.log('à?"? [OrdersController] User from @CurrentUser():', user?.id);
 		return this.ordersService.findOneById(id, user.id);
 	}
 
@@ -46,7 +46,17 @@ export class OrdersController {
 		@Param('id') id: string,
 		// @Param('id', ParseUUIDPipe) id: string,
 	): Promise<AcceptOrderResponseDto> {
-		console.log('🔍 [OrdersController] User from @CurrentUser():', user?.id);
+		console.log('à?"? [OrdersController] User from @CurrentUser():', user?.id);
 		return this.ordersService.acceptOrder(id, user.id);
+	}
+
+	@Post(':id/advance')
+	@HttpCode(200)
+	async advanceOrder(
+		@CurrentUser() user: { id: string },
+		@Param('id') id: string,
+	): Promise<AdvanceOrderResponseDto> {
+		console.log('à?"? [OrdersController] User from @CurrentUser():', user?.id);
+		return this.ordersService.advanceOrderStatus(id, user.id);
 	}
 }

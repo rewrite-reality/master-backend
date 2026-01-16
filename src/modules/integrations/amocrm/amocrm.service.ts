@@ -135,6 +135,17 @@ export class AmoCrmService {
 			return;
 		}
 
+		const existingOrder = await this.prisma.order.findUnique({
+			where: { amoLeadId: parsed.amoId },
+			select: { id: true },
+		});
+
+		if (existingOrder) {
+			this.logger.log(`Order already exists for Amo lead ${originalId}, skipping creation`);
+			results.push({ id: originalId, status: 'skipped_existing_order', orderId: existingOrder.id });
+			return;
+		}
+
 		// 3. Clean Address
 		const address = await this.dadata.cleanAddress(parsed.rawAddress);
 

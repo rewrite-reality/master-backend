@@ -21,6 +21,7 @@ import {
 	MasterStatus,
 } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
+import { AmoCrmSyncService } from '../integrations/amocrm/amocrm.sync.service';
 
 // Join table types based on schema
 type MasterDistrictRelation = {
@@ -51,6 +52,7 @@ export class OrdersService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly eventEmitter: EventEmitter2,
+		private readonly amocrmSyncService: AmoCrmSyncService,
 	) { }
 
 	private async getMasterProfile(userId: string): Promise<MasterProfileWithRelations> {
@@ -71,6 +73,19 @@ export class OrdersService {
 		}
 
 		return master;
+	}
+
+	private getNextStatus(status: OrderStatus): OrderStatus | null {
+		switch (status) {
+			case OrderStatus.ASSIGNED:
+				return OrderStatus.ARRIVED;
+			case OrderStatus.ARRIVED:
+				return OrderStatus.IN_PROGRESS;
+			case OrderStatus.IN_PROGRESS:
+				return OrderStatus.COMPLETED;
+			default:
+				return null;
+		}
 	}
 
 	private mapToDto(order: OrderWithRelations, currentMasterId?: string): OrderResponseDto {
@@ -278,5 +293,74 @@ export class OrdersService {
 		);
 
 		return { success: true, orderId, message: 'Order successfully accepted' };
+	}
+
+	async advanceOrderStatus(orderId: string, userId: string): Promise<{ id: string; status: OrderStatus; amoLeadId: string | null; }> {
+		const master = await this.getMasterProfile(userId);
+
+		const order = await this.prisma.order.findUnique({
+			where: { id: orderId },
+			select: {
+				id: true,
+				status: true,
+				masterId: true,
+				amoLeadId: true,
+			},
+		});
+
+		if (!order) {
+			throw new NotFoundException('Order not found');
+		}
+
+		if (order.masterId !== master.id) {
+			throw new ForbiddenException('Only the assigned master can advance this order');
+		}
+
+		const nextStatus = this.getNextStatus(order.status);
+		if (!nextStatus) {
+			throw new ConflictException('Order cannot be advanced from its current status');
+		}
+
+		await this.prisma.$transaction(async (tx) => {
+			const result = await tx.order.updateMany({
+				where: {
+					id: orderId,
+					status: order.status,
+					masterId: master.id,
+				},
+				data: {
+					status: nextStatus,
+					updatedAt: new Date(),
+				},
+			});
+
+			if (result.count === 0) {
+				throw new ConflictException('Order status changed, please retry');
+			}
+
+			await tx.orderLog.create({
+				data: {
+					orderId,
+					message: `Order status advanced to ${nextStatus}`,
+					meta: {
+						prevStatus: order.status,
+						nextStatus,
+						byUserId: userId,
+					},
+				},
+			});
+
+			await this.amocrmSyncService.enqueueLeadMove(tx, {
+				orderId,
+				amoLeadId: order.amoLeadId ?? undefined,
+				orderStatus: nextStatus,
+			});
+		});
+
+		return {
+			id: orderId,
+			status: nextStatus,
+			amoLeadId: order.amoLeadId ?? null,
+		};
 	}
 }

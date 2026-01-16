@@ -13,6 +13,10 @@ export class AmoCrmApiService {
 		this.accessToken = this.config.get<string>('AMOCRM_ACCESS_TOKEN', '');
 	}
 
+	private get apiBase() {
+		return `https://${this.subdomain}.amocrm.ru/api/v4`;
+	}
+
 	async getLeadById(leadId: string): Promise<any> {
 		if (!this.subdomain || !this.accessToken) {
 			this.logger.error('Missing AmoCRM configuration (SUBDOMAIN or ACCESS_TOKEN)');
@@ -20,7 +24,7 @@ export class AmoCrmApiService {
 		}
 
 		try {
-			const url = `https://${this.subdomain}.amocrm.ru/api/v4/leads/${leadId}?with=contacts`;
+			const url = `${this.apiBase}/leads/${leadId}?with=contacts`;
 			const response = await axios.get(url, {
 				headers: {
 					Authorization: `Bearer ${this.accessToken}`,
@@ -44,7 +48,7 @@ export class AmoCrmApiService {
 		}
 
 		try {
-			const url = `https://${this.subdomain}.amocrm.ru/api/v4/contacts/${contactId}`;
+			const url = `${this.apiBase}/contacts/${contactId}`;
 			const response = await axios.get(url, {
 				headers: {
 					Authorization: `Bearer ${this.accessToken}`,
@@ -58,6 +62,39 @@ export class AmoCrmApiService {
 				error.response?.data,
 			);
 			return null;
+		}
+	}
+
+	async updateLeadStatus(params: { leadId: string; statusId: number; pipelineId?: number }): Promise<boolean> {
+		if (!this.subdomain || !this.accessToken) {
+			this.logger.error('Missing AmoCRM configuration (SUBDOMAIN or ACCESS_TOKEN)');
+			return false;
+		}
+
+		const { leadId, statusId, pipelineId } = params;
+
+		try {
+			const url = `${this.apiBase}/leads/${leadId}`;
+			await axios.patch(
+				url,
+				{
+					status_id: statusId,
+					...(pipelineId ? { pipeline_id: pipelineId } : {}),
+				},
+				{
+					headers: {
+						Authorization: `Bearer ${this.accessToken}`,
+					},
+				},
+			);
+
+			return true;
+		} catch (error: any) {
+			this.logger.error(
+				`Failed to update lead ${leadId} status in AmoCRM: ${error.message}`,
+				error.response?.data,
+			);
+			return false;
 		}
 	}
 }
