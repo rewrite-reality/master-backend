@@ -5,6 +5,7 @@ import { UpdateProfileDto } from './dto/update-profile.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import type { User } from '@prisma/client';
+import { BalanceResponseDto } from './dto/balance-response.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard)
@@ -15,6 +16,12 @@ export class UsersController {
 	@HttpCode(HttpStatus.OK)
 	async getMe(@CurrentUser() user: User) {
 		return this.usersService.getMe(user.id);
+	}
+
+	@Get('balance')
+	@HttpCode(HttpStatus.OK)
+	async getBalance(@CurrentUser() user: User): Promise<BalanceResponseDto> {
+		return this.usersService.getBalance(user.id);
 	}
 
 	@Post('profile')

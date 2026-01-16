@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { OrdersService } from './orders.service';
 import { OrdersController } from './orders.controller';
 import { IntegrationsModule } from '../integrations/integrations.module';
+import { PayoutsModule } from '../payouts/payouts.module';
 
 @Module({
-	imports: [IntegrationsModule],
+	imports: [IntegrationsModule, PayoutsModule],
 	controllers: [OrdersController],
 	providers: [OrdersService],
 	exports: [OrdersService],

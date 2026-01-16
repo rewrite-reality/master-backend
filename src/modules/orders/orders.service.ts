@@ -22,6 +22,7 @@ import {
 } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { AmoCrmSyncService } from '../integrations/amocrm/amocrm.sync.service';
+import { PayoutsService } from '../payouts/payouts.service';
 
 // Join table types based on schema
 type MasterDistrictRelation = {
@@ -53,6 +54,7 @@ export class OrdersService {
 		private readonly prisma: PrismaService,
 		private readonly eventEmitter: EventEmitter2,
 		private readonly amocrmSyncService: AmoCrmSyncService,
+		private readonly payoutsService: PayoutsService,
 	) { }
 
 	private async getMasterProfile(userId: string): Promise<MasterProfileWithRelations> {
@@ -349,6 +351,13 @@ export class OrdersService {
 					},
 				},
 			});
+
+			if (nextStatus === OrderStatus.COMPLETED) {
+				await this.payoutsService.creditForOrderCompletion(tx, {
+					orderId,
+					performedByUserId: userId,
+				});
+			}
 
 			await this.amocrmSyncService.enqueueLeadMove(tx, {
 				orderId,

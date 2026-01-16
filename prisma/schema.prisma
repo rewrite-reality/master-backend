@@ -60,9 +60,48 @@ enum OutboxEventType {
   AMOCRM_LEAD_MOVE
 }
 
+enum PayoutType {
+  EARNING // начисление за выполненный заказ
+  ADJUSTMENT // ручная корректировка (на будущее)
+  WITHDRAWAL // вывод (на будущее)
+}
+
+enum PayoutStatus {
+  POSTED // проведено (увеличило баланс)
+  REVERSED // отменено (на будущее)
+}
+
 // ------------------------------------------------------
 // MODELS
 // ------------------------------------------------------
+
+model Payout {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  masterId String
+  master   MasterProfile @relation(fields: [masterId], references: [id], onDelete: Cascade)
+
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  type   PayoutType   @default(EARNING)
+  status PayoutStatus @default(POSTED)
+
+  /// Сумма начисления мастеру
+  amount Decimal @db.Decimal(10, 2)
+
+  /// Процент, по которому посчитали (фиксируем на момент выплаты)
+  percent Int
+
+  /// Доп. данные (на будущее)
+  meta Json?
+
+  /// Идемпотентность: за один заказ — одно начисление (ключевой момент!)
+  @@unique([orderId])
+  @@index([masterId, createdAt])
+  @@map("payouts")
+}
 
 model IntegrationOutbox {
   id        String   @id @default(uuid())
@@ -164,6 +203,9 @@ model MasterProfile {
 
   balance Decimal @default(0) @db.Decimal(10, 2)
 
+  /// Процент выплаты мастеру (по умолчанию 50%)
+  payoutPercent Int @default(50)
+
   // Настройки "Гонки"
   autoAccept Boolean @default(false) // Авто-принятие (на будущее)
 
@@ -172,6 +214,8 @@ model MasterProfile {
 
   // Связь со специальностями
   specialties MasterSpecialty[]
+
+  payouts Payout[] // <-- добавь (см. модель ниже)
 
   orders Order[] // История заказов
 
@@ -253,6 +297,8 @@ model Order {
   // --- Relations ---
   masterId String?
   master   MasterProfile? @relation(fields: [masterId], references: [id])
+
+  payout Payout? // <-- добавь (один заказ -> одна выплата)
 
   // История изменений (кто принял, когда закрыл)
   logs OrderLog[]

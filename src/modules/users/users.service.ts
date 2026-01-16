@@ -10,6 +10,8 @@ import { Prisma, MasterStatus } from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service';
 import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
+import { plainToInstance } from 'class-transformer';
+import { BalanceResponseDto } from './dto/balance-response.dto';
 
 @Injectable()
 export class UsersService {
@@ -333,6 +335,56 @@ export class UsersService {
 
 			return updatedProfile;
 		});
+	}
+
+	async getBalance(userId: string): Promise<BalanceResponseDto> {
+		const master = await this.prisma.masterProfile.findUnique({
+			where: { userId },
+			select: {
+				id: true,
+				status: true,
+				balance: true,
+				payoutPercent: true,
+			},
+		});
+
+		if (!master) {
+			this.logger.warn(`Balance requested but master profile missing for user ${userId}`);
+			throw new ForbiddenException('Master profile not found for current user');
+		}
+
+		if (master.status !== MasterStatus.ACTIVE) {
+			throw new ForbiddenException('Master account is not active');
+		}
+
+		const payouts = await this.prisma.payout.findMany({
+			where: { masterId: master.id },
+			orderBy: { createdAt: 'desc' },
+			take: 10,
+			select: {
+				id: true,
+				orderId: true,
+				amount: true,
+				percent: true,
+				createdAt: true,
+			},
+		});
+
+		return plainToInstance(
+			BalanceResponseDto,
+			{
+				balance: new Prisma.Decimal(master.balance).toNumber(),
+				payoutPercent: master.payoutPercent,
+				payouts: payouts.map((payout) => ({
+					id: payout.id,
+					orderId: payout.orderId,
+					amount: new Prisma.Decimal(payout.amount).toNumber(),
+					percent: payout.percent,
+					createdAt: payout.createdAt,
+				})),
+			},
+			{ excludeExtraneousValues: true },
+		);
 	}
 
 }

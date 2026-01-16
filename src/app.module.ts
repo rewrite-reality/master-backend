@@ -9,7 +9,6 @@ import { DispatchModule } from './modules/dispatch/dispatch.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
 import { EventsModule } from './events/events.module';
-import { JobsModule } from './jobs/jobs.module';
 import { ConfigModule } from './core/config/config.module';
 import { DatabaseModule } from './core/database/database.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -20,7 +19,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { DevModule } from './modules/dev/dev.module';
 
 @Module({
-	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, IntegrationsModule, EventsModule, JobsModule,
+	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, IntegrationsModule, EventsModule,
 		ConfigModule,
 		DatabaseModule,
 		RedisModule,
