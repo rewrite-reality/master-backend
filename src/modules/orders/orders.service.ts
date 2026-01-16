@@ -1,4 +1,4 @@
-import {
+﻿import {
 	ConflictException,
 	ForbiddenException,
 	Injectable,
@@ -47,6 +47,18 @@ type OrderWithRelations = Order & {
 	specialty: Specialty | null;
 	master: MasterProfile | null;
 };
+
+const ACTIVE_ORDER_STATUSES: readonly OrderStatus[] = [
+	OrderStatus.ASSIGNED,
+	OrderStatus.ARRIVED,
+	OrderStatus.IN_PROGRESS,
+];
+
+const HISTORY_ORDER_STATUSES: readonly OrderStatus[] = [
+	OrderStatus.COMPLETED,
+	OrderStatus.CANCELLED,
+	OrderStatus.DISPUTE,
+];
 
 @Injectable()
 export class OrdersService {
@@ -186,6 +198,84 @@ export class OrdersService {
 		return orders.map((order) => this.mapToDto(order as OrderWithRelations, master.id));
 	}
 
+	async findActiveOrders(
+		userId: string,
+		query: GetOrdersQueryDto,
+	): Promise<OrderResponseDto[]> {
+		const master = await this.getMasterProfile(userId);
+
+		const where: Prisma.OrderWhereInput = {
+			masterId: master.id,
+			status: { in: ACTIVE_ORDER_STATUSES as OrderStatus[] },
+		};
+
+		// No district/specialty filter: list only orders already assigned to this master.
+		if (query.search) {
+			where.OR = [
+				{ title: { contains: query.search, mode: 'insensitive' } },
+				{ description: { contains: query.search, mode: 'insensitive' } },
+				{ street: { contains: query.search, mode: 'insensitive' } },
+			];
+		}
+
+		const orders = await this.prisma.order.findMany({
+			where,
+			include: {
+				district: true,
+				specialty: true,
+				master: true,
+			},
+			// Show the most recently touched active orders first
+			orderBy: [
+				{ updatedAt: 'desc' },
+				{ createdAt: 'desc' },
+			],
+			take: query.limit,
+			skip: query.offset,
+		});
+
+		return orders.map((order) => this.mapToDto(order as OrderWithRelations, master.id));
+	}
+
+	async findOrderHistory(
+		userId: string,
+		query: GetOrdersQueryDto,
+	): Promise<OrderResponseDto[]> {
+		const master = await this.getMasterProfile(userId);
+
+		const where: Prisma.OrderWhereInput = {
+			masterId: master.id,
+			status: { in: HISTORY_ORDER_STATUSES as OrderStatus[] },
+		};
+
+		// No district/specialty filter: history is limited to this master's completed/cancelled work.
+		if (query.search) {
+			where.OR = [
+				{ title: { contains: query.search, mode: 'insensitive' } },
+				{ description: { contains: query.search, mode: 'insensitive' } },
+				{ street: { contains: query.search, mode: 'insensitive' } },
+			];
+		}
+
+		const orders = await this.prisma.order.findMany({
+			where,
+			include: {
+				district: true,
+				specialty: true,
+				master: true,
+			},
+			// Latest updates first to surface recent completions/cancellations
+			orderBy: [
+				{ updatedAt: 'desc' },
+				{ createdAt: 'desc' },
+			],
+			take: query.limit,
+			skip: query.offset,
+		});
+
+		return orders.map((order) => this.mapToDto(order as OrderWithRelations, master.id));
+	}
+
 	async findOneById(orderId: string, userId: string): Promise<OrderResponseDto> {
 		const master = await this.getMasterProfile(userId);
 
@@ -263,6 +353,7 @@ export class OrdersService {
 				where: {
 					id: orderId,
 					status: OrderStatus.PENDING,
+					dispatchMode: DispatchMode.RACE,
 				},
 				data: {
 					status: OrderStatus.ASSIGNED,
@@ -279,7 +370,7 @@ export class OrdersService {
 			await tx.orderLog.create({
 				data: {
 					orderId,
-					message: 'Статус изменен на ASSIGNED',
+					message: 'Order status changed to ASSIGNED',
 					meta: {
 						action: 'ASSIGNED',
 						performedBy: master.id,

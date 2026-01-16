@@ -26,6 +26,16 @@ export class OrdersController {
 		@Query() query: GetOrdersQueryDto,
 	): Promise<OrderResponseDto[]> {
 		console.log('à?"? [OrdersController] User from @CurrentUser():', user?.id);
+		const scope = query.scope ?? 'available';
+
+		if (scope === 'active') {
+			return this.ordersService.findActiveOrders(user.id, query);
+		}
+
+		if (scope === 'history') {
+			return this.ordersService.findOrderHistory(user.id, query);
+		}
+
 		return this.ordersService.findAvailableOrders(user.id, query);
 	}
 

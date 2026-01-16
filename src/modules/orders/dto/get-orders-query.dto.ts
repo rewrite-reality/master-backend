@@ -3,6 +3,7 @@ import {
 	IsBoolean,
 	IsEnum,
 	IsInt,
+	IsIn,
 	IsNumber,
 	IsOptional,
 	IsString,
@@ -12,10 +13,17 @@ import {
 } from 'class-validator';
 import { OrderStatus } from '@prisma/client';
 
+export const ORDERS_SCOPE_VALUES = ['available', 'active', 'history'] as const;
+export type OrdersScope = typeof ORDERS_SCOPE_VALUES[number];
+
 export class GetOrdersQueryDto {
 	@IsOptional()
 	@IsEnum(OrderStatus)
 	status?: OrderStatus = OrderStatus.PENDING;
+
+	@IsOptional()
+	@IsIn(ORDERS_SCOPE_VALUES)
+	scope?: OrdersScope = 'available';
 
 	@IsOptional()
 	@IsUUID()
