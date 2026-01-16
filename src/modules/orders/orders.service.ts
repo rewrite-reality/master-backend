@@ -234,7 +234,8 @@ export class OrdersService {
 				districtId: true,
 				specialtyId: true,
 				status: true,
-				dispatchMode: true
+				dispatchMode: true,
+				amoLeadId: true,
 			},
 		});
 
@@ -286,6 +287,12 @@ export class OrdersService {
 						timestamp: new Date().toISOString()
 					},
 				},
+			});
+
+			await this.amocrmSyncService.enqueueLeadMove(tx, {
+				orderId,
+				amoLeadId: order.amoLeadId ?? undefined,
+				orderStatus: OrderStatus.ASSIGNED,
 			});
 		});
 
