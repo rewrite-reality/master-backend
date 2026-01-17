@@ -1,98 +1,121 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Master Backend 🛠️
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend-система для управления заказами и мастерами "Мастер на час". Интеграция с AmoCRM, автоматическое распределение заказов и уведомления в Telegram.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🌟 Основные возможности
 
-## Description
+- **Управление заказами**: Полный жизненный цикл заказа (от создания в CRM до завершения мастером).
+- **Система "Гонка" (Race Mode)**: Свободное распределение заказов — кто первый принял, тот и исполнитель.
+- **Интеграция с AmoCRM (v4)**: Двусторонняя синхронизация сделок, автоматическое создание заказов при переходе в целевой статус.
+- **Telegram Bot**: Уведомления мастеров о новых заказах, управление профилем и статусом работы через Mini App.
+- **Мастера и профили**: Система рейтингов, привязка к районам города и специальностям.
+- **Гео-данные**: Интеграция с Dadata для нормализации адресов и автоматического определения района.
+- **Обработка выплат**: Автоматический расчет вознаграждения мастера на основе выполненных заказов.
+- **Безопасность**: JWT-авторизация, Role-Based Access Control (Admin, Manager, Master).
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 🛠 Стек технологий
 
-## Project setup
+- **Framework**: [NestJS](https://nestjs.com/) (Node.js)
+- **Database**: PostgreSQL
+- **ORM**: [Prisma](https://www.prisma.io/)
+- **Queues & Cache**: Redis + [BullMQ](https://docs.bullmq.io/)
+- **CRM Integration**: AmoCRM API v4
+- **Notifications**: Telegraf (Telegram Bot API)
+- **Data Validation**: class-validator, Joi
+- **API Documentation**: Swagger (OpenAPI 3.0)
 
-```bash
-$ npm install
+## 📁 Структура проекта
+
+```text
+src/
+├── core/             # Глобальные фильтры, перехватчики, декораторы
+├── modules/          # Функциональные модули
+│   ├── auth/         # Авторизация и JWT стратегии
+│   ├── users/        # Управление пользователями и профилями мастеров
+│   ├── orders/       # Логика заказов и их жизненный цикл
+│   ├── dispatch/     # Распределение заказов (Race mode)
+│   ├── integrations/ # Внешние API: AmoCRM, Dadata, Idempotency
+│   ├── notifications/# Telegram бот и уведомления
+│   ├── payouts/      # Финансовые расчеты и баланс
+│   ├── districts/    # Справочник районов
+│   └── specialties/  # Справочник квалификаций мастеров
+├── main.ts           # Точка входа
+└── app.module.ts     # Корневой модуль
 ```
 
-## Compile and run the project
+## 🚀 Быстрый старт
 
+### Требования
+- Node.js v20+
+- Docker & Docker Compose (для PostgreSQL и Redis)
+
+### 1. Установка зависимостей
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
 ```
 
-## Run tests
-
-```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+### 2. Настройка окружения
+Создайте файл `.env` в корне проекта на основе текущего примера:
+```env
+PORT=3000
+DATABASE_URL="postgresql://user:password@localhost:5432/master_na_chas"
+REDIS_HOST=localhost
+REDIS_PORT=6379
+TELEGRAM_BOT_TOKEN="your_bot_token"
+JWT_SECRET="your_secret"
+AMOCRM_CLIENT_ID="..."
+AMOCRM_CLIENT_SECRET="..."
+AMOCRM_SUBDOMAIN="..."
+DADATA_API_KEY="..."
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
+### 3. Запуск инфраструктуры
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+docker-compose up -d
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 4. Подготовка базы данных
+```bash
+npx prisma generate
+npx prisma migrate dev
+```
 
-## Resources
+### 5. Запуск приложения
+```bash
+# Режим разработки
+npm run start:dev
 
-Check out a few resources that may come in handy when working with NestJS:
+# Продакшн
+npm run build
+npm run start:prod
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+## 🧪 Тестирование и качество кода
 
-## Support
+В проекте используются Jest для тестов и ESLint/Prettier для поддержания качества кода.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+# Запуск юнит-тестов
+npm run test
 
-## Stay in touch
+# Запуск e2e тестов
+npm run test:e2e
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+# Проверка покрытия тестами
+npm run test:cov
 
-## License
+# Проверка кода линтером
+npm run lint
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+# Форматирование кода
+npm run format
+```
+
+## 📝 Документация API
+
+После запуска приложения Swagger UI доступен по адресу:
+`http://localhost:3000/api/docs`
+
+## 🛡 Лицензия
+
+Этот проект является частной собственностью команды **Rewrite Reality RRM**. Все права защищены.
