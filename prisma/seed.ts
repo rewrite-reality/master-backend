@@ -1,13 +1,18 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 
-const prisma = new PrismaClient();
+// Настройка подключения для Prisma 7
+const connectionString = process.env.DATABASE_URL;
+
+const pool = new Pool({ connectionString });
+const adapter = new PrismaPg(pool);
+const prisma = new PrismaClient({ adapter });
 
 async function main() {
 	console.log('Start seeding...');
 
 	// 1. Районы (Districts)
-	// Я добавил Тракторозаводский и Металлургический, так как их не было на скрине,
-	// но они есть в Челябинске (уберите, если не нужны).
 	const districts = [
 		{ name: 'Ленинский', city: 'Челябинск' },
 		{ name: 'Советский', city: 'Челябинск' },
@@ -21,9 +26,9 @@ async function main() {
 	console.log('Seeding Districts...');
 	for (const district of districts) {
 		await prisma.district.upsert({
-			// ИСПРАВЛЕНИЕ ЗДЕСЬ: используем составной ключ
 			where: {
-				city_name: { // Это имя составного ключа в Prisma
+				// Убедитесь, что в schema.prisma у вас определен @@unique([name, city], name: "city_name")
+				city_name: {
 					city: district.city,
 					name: district.name,
 				},
@@ -39,7 +44,6 @@ async function main() {
 		});
 	}
 
-
 	// 2. Специальности (Specialties)
 	const specialties = [
 		{ name: 'Сантехник', code: 'plumber' },
@@ -53,7 +57,7 @@ async function main() {
 	console.log('Seeding Specialties...');
 	for (const specialty of specialties) {
 		await prisma.specialty.upsert({
-			where: { code: specialty.code }, // Ищем по уникальному коду
+			where: { code: specialty.code },
 			update: {
 				name: specialty.name,
 				isActive: true,
