@@ -11,6 +11,7 @@ import { DispatchModule } from '../dispatch/dispatch.module';
 import { AmoCrmSyncService } from './amocrm/amocrm.sync.service';
 import { AmoCrmSyncProcessor } from './amocrm/amocrm-sync.processor';
 import { AmoCrmSyncScheduler } from './amocrm/amocrm-sync.scheduler';
+import { AmoCrmWebhookProcessor } from './amocrm/amocrm.webhook.processor';
 
 @Module({
 	imports: [
@@ -18,6 +19,8 @@ import { AmoCrmSyncScheduler } from './amocrm/amocrm-sync.scheduler';
 		DispatchModule,
 		BullModule.registerQueue({
 			name: 'amocrm-sync',
+		}, {
+			name: 'amocrm-webhooks',
 		}),
 	],
 	controllers: [AmoCrmController],
@@ -30,6 +33,7 @@ import { AmoCrmSyncScheduler } from './amocrm/amocrm-sync.scheduler';
 		AmoCrmSyncService,
 		AmoCrmSyncProcessor,
 		AmoCrmSyncScheduler,
+		AmoCrmWebhookProcessor,
 	],
 	exports: [DadataService, IdempotencyService, AmoCrmSyncService],
 })
