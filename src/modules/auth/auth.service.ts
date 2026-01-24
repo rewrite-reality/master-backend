@@ -3,12 +3,14 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../core/database/prisma.service';
 import { verifyTelegramInitData } from '../../core/telegram/init-data';
-import Redis from 'ioredis';
+import { Redis } from 'ioredis';
 import * as argon2 from 'argon2';
 
 @Injectable()
 export class AuthService {
 	private readonly logger = new Logger(AuthService.name);
+	// TTL для кэша сессии в Redis (1 час - чтобы обновлять данные не слишком часто, но и не вечно)
+	private readonly SESSION_TTL = 3600;
 
 	constructor(
 		private config: ConfigService,
@@ -18,17 +20,107 @@ export class AuthService {
 	) { }
 
 	/**
-	 * Инвалидация кеша пользователя
-	 * @param userId ID пользователя
+	 * Инвалидация кеша (например, при смене роли или блокировке)
 	 */
-	async invalidateUserCache(userId: string) {
-		await this.redis.del(`user:${userId}`);
-		this.logger.log(`Invalidated cache for user ${userId}`);
+	async invalidateUserCache(telegramId: bigint | string) {
+		await this.redis.del(`session:tg:${telegramId}`);
+		this.logger.log(`Invalidated session cache for tgId: ${telegramId}`);
 	}
+
+	/**
+	 * Основной метод логина (ОПТИМИЗИРОВАННЫЙ)
+	 */
+	async login(initData: string) {
+		// 1. Валидация подписи (CPU only, без БД)
+		const tgUser = this.validateTelegramInitData(initData);
+		const telegramId = BigInt(tgUser.id);
+		const redisKey = `session:tg:${telegramId}`;
+
+		// 2. CHECK CACHE: Пытаемся отдать ответ мгновенно из Redis
+		const cachedSession = await this.redis.get(redisKey);
+		if (cachedSession) {
+			// Если кэш есть - парсим и отдаем. 0 запросов к PostgreSQL!
+			return JSON.parse(cachedSession);
+		}
+
+		// 3. READ FIRST: Если кэша нет, читаем БД (SELECT намного дешевле UPDATE)
+		let user = await this.prisma.user.findUnique({
+			where: { telegramId },
+			include: { masterProfile: true },
+		});
+
+		// 4. WRITE ONLY IF NEEDED: Логика создания или обновления
+		if (!user) {
+			// Сценарий 1: Новый пользователь (CREATE)
+			user = await this.prisma.user.create({
+				data: {
+					telegramId,
+					telegramUsername: tgUser.username || null,
+					role: 'MASTER',
+					masterProfile: {
+						create: {
+							firstName: tgUser.first_name || '',
+							lastName: tgUser.last_name || '',
+							phone: '',
+							status: 'PENDING',
+						},
+					},
+				},
+				include: { masterProfile: true },
+			});
+			this.logger.log(`New user created: ${user.id}`);
+		} else {
+			// Сценарий 2: Пользователь существует. Проверяем, изменились ли данные.
+			const usernameChanged = user.telegramUsername !== (tgUser.username || null);
+
+			if (usernameChanged) {
+				// Пишем в БД (UPDATE) только если реально что-то поменялось
+				user = await this.prisma.user.update({
+					where: { id: user.id },
+					data: {
+						telegramUsername: tgUser.username || null
+					},
+					include: { masterProfile: true },
+				});
+			}
+		}
+
+		// 5. Генерация токена
+		const payload = {
+			sub: user.id,
+			role: user.role,
+			// FIX: Используем переменную telegramId из начала функции. 
+			// Она точно существует, в отличие от поля в базе, которое TS считает nullable.
+			tgId: telegramId.toString(),
+		};
+
+		const accessToken = this.jwt.sign(payload);
+
+
+		// 6. Формируем ответ
+		const response = {
+			accessToken,
+			user: {
+				id: user.id,
+				role: user.role,
+				firstName: tgUser.first_name,
+				lastName: tgUser.last_name,
+				username: user.telegramUsername,
+				hasProfile: !!user.masterProfile,
+			},
+		};
+
+		// 7. CACHE SET: Запоминаем результат в Redis на 1 час
+		// Используем 'EX' для автоматического удаления
+		await this.redis.set(redisKey, JSON.stringify(response), 'EX', this.SESSION_TTL);
+
+		return response;
+	}
+
+	// --- Вспомогательные методы (без изменений логики, только стиль) ---
 
 	async validateAdmin(email: string, password: string) {
 		const normalizedEmail = email.trim().toLowerCase();
-
 		const user = await this.prisma.user.findUnique({
 			where: { email: normalizedEmail },
 		});
@@ -41,181 +133,52 @@ export class AuthService {
 		if (!passwordValid) {
 			throw new UnauthorizedException('Invalid credentials');
 		}
-
 		return user;
 	}
 
 	async loginAdmin(email: string, password: string) {
 		const user = await this.validateAdmin(email, password);
-
-		const payload = {
-			sub: user.id,
-			role: user.role,
-		};
-
-		const accessToken = this.jwt.sign(payload);
-
+		const payload = { sub: user.id, role: user.role };
 		return {
-			accessToken,
-			user: {
-				id: user.id,
-				role: user.role,
-				email: user.email,
-			},
+			accessToken: this.jwt.sign(payload),
+			user: { id: user.id, role: user.role, email: user.email },
 		};
 	}
 
-	/**
-	 * Проверяет подпись initData от Telegram Mini App
-	 * @param initData Строка initData (raw)
-	 * @returns Объект user из initData
-	 */
-
 	validateTelegramInitData(initData: string): any {
-		if (!initData) {
-			throw new UnauthorizedException('Missing initData');
-		}
+		if (!initData) throw new UnauthorizedException('Missing initData');
 
-		// на всякий: иногда прилетает tgWebAppData=...
 		const cleaned = initData.startsWith('tgWebAppData=')
 			? initData.slice('tgWebAppData='.length)
 			: initData;
 
 		try {
 			const parsed = verifyTelegramInitData(cleaned);
-
-			// parsed.user — объект Telegram user
 			const user = parsed?.user;
 
 			if (!user || typeof user !== 'object') {
 				throw new UnauthorizedException('No user data in initData');
 			}
 
-			// optional anti-replay (в секундах)
 			const authDate = (parsed as any)?.authDate;
 			if (typeof authDate === 'number') {
 				const nowSec = Math.floor(Date.now() / 1000);
-				const maxAge =
-					Number(this.config.get<string>('INIT_DATA_MAX_AGE')) || 3600;
+				const maxAge = this.getInitDataMaxAge();
 
 				if (nowSec - authDate > maxAge) {
-					this.logger.warn(
-						`InitData is expired. now=${nowSec}, auth_date=${authDate}, age=${nowSec - authDate}, maxAge=${maxAge}`,
-					);
 					throw new UnauthorizedException('InitData expired');
 				}
 			}
-
 			return user;
 		} catch (e: any) {
-			// validate() кидает ошибку — превращаем в 401
 			this.logger.warn(`Invalid initData: ${e?.message ?? e}`);
 			throw new UnauthorizedException('Invalid Telegram signature');
 		}
 	}
 
-
-	private normalizeInitData(rawInitData: string): string {
-		let normalized = rawInitData.trim();
-
-		if (normalized.startsWith('tgWebAppData=')) {
-			normalized = normalized.slice('tgWebAppData='.length);
-		}
-
-		const looksEncoded = /%(3D|26|2B|7B|7D|22|25)/i.test(normalized);
-		if (looksEncoded) {
-			try {
-				const decoded = decodeURIComponent(normalized);
-				if (decoded.includes('=') && decoded.includes('&')) {
-					normalized = decoded;
-				}
-			} catch (error) {
-				this.logger.warn(`Failed to decode initData, using raw value. Reason: ${(error as Error).message}`);
-			}
-		}
-
-		return normalized;
-	}
-
-	private safeDecodeURIComponent(value: string): string {
-		try {
-			return decodeURIComponent(value);
-		} catch {
-			return value;
-		}
-	}
-
 	private getInitDataMaxAge(): number {
 		const configured = this.config.get('INIT_DATA_MAX_AGE');
-		const parsed = typeof configured === 'string' ? Number(configured) : Number(configured);
+		const parsed = Number(configured);
 		return Number.isFinite(parsed) && parsed > 0 ? parsed : 3600;
-	}
-
-
-	/**
-	 * Основной метод логина
-	 * @param initData Строка initData
-	 */
-	async login(initData: string) {
-		// 1. Валидация
-		const tgUser = this.validateTelegramInitData(initData);
-		const telegramId = BigInt(tgUser.id);
-
-		// 2. Поиск или создание пользователя (upsert - update or insert)
-		// Используем transaction, чтобы гарантировать атомарность, 
-		// хотя здесь можно и простой findUnique + create
-
-		// Сначала пробуем найти, чтобы не делать лишних write операций
-		// 2. Поиск или создание пользователя (upsert - update or insert)
-		// Используем upsert для атомарности и предотвращения race condition
-		const user = await this.prisma.user.upsert({
-			where: { telegramId },
-			create: {
-				telegramId,
-				telegramUsername: tgUser.username || null,
-				telegramChatId: null, // chatId будет заполнен при первом взаимодействии с ботом
-				role: 'MASTER', // Все новые - мастера
-				masterProfile: {
-					create: {
-						// Создаем пустой профиль мастера, чтобы соблюсти инвариант
-						firstName: tgUser.first_name || '',
-						lastName: tgUser.last_name || '',
-						phone: '', // Будет заполнено позже
-						status: 'PENDING',
-					}
-				}
-			},
-			update: {
-				telegramUsername: tgUser.username || null,
-			},
-			include: { masterProfile: true },
-		});
-
-		// 3. Генерация JWT
-		if (!user.telegramId) {
-			throw new Error('User does not have telegramId');
-		}
-
-		const payload = {
-			sub: user.id,
-			role: user.role,
-			tgId: user.telegramId.toString(),
-		};
-
-		const accessToken = this.jwt.sign(payload);
-
-		this.logger.log(`User ${user.id} logged in via Telegram`);
-
-		return {
-			accessToken,
-			user: {
-				id: user.id,
-				role: user.role,
-				firstName: tgUser.first_name, // Данные из телеги, чтобы предзаполнить форму
-				lastName: tgUser.last_name,
-				username: user.telegramUsername,
-				hasProfile: !!user.masterProfile, // Флаг: заполнен ли профиль мастера
-			},
-		};
 	}
 }
