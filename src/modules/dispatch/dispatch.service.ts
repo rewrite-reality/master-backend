@@ -1,15 +1,20 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Logger } from '@nestjs/common';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { PrismaService } from '../../core/database/prisma.service';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { OrderCreatedEvent } from './events/order-created.event';
 import { DispatchMode, MasterStatus, Order, OrderStatus } from '@prisma/client';
+import { Redis } from 'ioredis'; // 1. Импорт Redis
 
 @Injectable()
 export class DispatchService {
+	private readonly logger = new Logger(DispatchService.name);
+
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly eventEmitter: EventEmitter2,
+		// 2. Внедрение клиента Redis
+		@Inject('REDIS_CLIENT') private readonly redis: Redis,
 	) { }
 
 	async createOrder(dto: CreateOrderDto) {
@@ -41,7 +46,13 @@ export class DispatchService {
 			},
 		});
 
-		console.log(`[DispatchService] Order created: ${order.id}`);
+		this.logger.log(`[DispatchService] Order created: ${order.id}`);
+
+		// 3. 🔥 HOT CACHE WARM-UP 🔥
+		// Сразу пишем в Redis статус заказа, чтобы OrdersService.acceptOrder
+		// мог проверить его мгновенно, не обращаясь к БД.
+		// TTL ставим 1 час (3600), этого достаточно, чтобы заказ разобрали.
+		await this.redis.set(`order:status:${order.id}`, OrderStatus.PENDING, 'EX', 3600);
 
 		this.eventEmitter.emit(
 			'order.created',
@@ -56,6 +67,7 @@ export class DispatchService {
 		return order;
 	}
 
+	// ... findEligibleMasters оставляем как есть, там кэш не нужен (это сложный поиск)
 	async findEligibleMasters(orderId: string) {
 		const order = await this.prisma.order.findUnique({
 			where: { id: orderId },
@@ -96,7 +108,7 @@ export class DispatchService {
 			},
 		});
 
-		console.log(`[DispatchService] Found ${masters.length} eligible masters`);
+		this.logger.log(`[DispatchService] Found ${masters.length} eligible masters for order ${orderId}`);
 
 		return masters;
 	}
