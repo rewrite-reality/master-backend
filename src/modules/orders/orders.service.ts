@@ -75,8 +75,10 @@ export class OrdersService {
 		// ... same as before
 		const isAssignedToCurrentMaster = !!currentMasterId && !!order.masterId && order.masterId === currentMasterId;
 		const price = order.price ? new Prisma.Decimal(order.price).toNumber() : null;
-		const hasCoordinates = order.lat !== null && order.lat !== undefined && order.lon !== null && order.lon !== undefined;
-		const mapUrl = hasCoordinates ? this.mapService.generateStaticMapUrl(order.lat, order.lon) : null;
+		let mapUrl: string | null = null;
+		if (order.lat !== null && order.lon !== null && typeof order.lat === 'number' && typeof order.lon === 'number') {
+			mapUrl = this.mapService.generateStaticMapUrl(order.lat, order.lon);
+		}
 
 		const safeOrder = {
 			...order,

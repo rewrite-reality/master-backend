@@ -18,7 +18,7 @@ import { GetOrdersQueryDto } from './dto/get-orders-query.dto';
 import { OrderResponseDto } from './dto/order-response.dto';
 import { AcceptOrderResponseDto } from './dto/accept-order-response.dto';
 import { AdvanceOrderResponseDto } from './dto/advance-order-response.dto';
-import { S3Service } from '../../integrations/s3/s3.service';
+import { S3Service } from '../integrations/s3/s3.service';
 import { Express } from 'express';
 import * as multer from 'multer';
 
