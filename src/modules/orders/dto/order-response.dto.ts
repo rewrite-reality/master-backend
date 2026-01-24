@@ -97,6 +97,11 @@ export class OrderResponseDto {
 	@Expose()
 	@IsOptional()
 	@IsString()
+	mapUrl: string | null;
+
+	@Expose()
+	@IsOptional()
+	@IsString()
 	specialtyId: string | null;
 
 	@Expose()

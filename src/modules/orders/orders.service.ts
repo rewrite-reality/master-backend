@@ -28,6 +28,7 @@ import { AmoCrmSyncService } from '../integrations/amocrm/amocrm.sync.service';
 import { PayoutsService } from '../payouts/payouts.service';
 import { AdminOrdersQueryDto } from '../admin/dto/admin-orders-query.dto';
 import { AdminUpdateOrderDto } from '../admin/dto/admin-update-order.dto';
+import { MapService } from '../../core/utils/map.service';
 
 // ... (Type definitions remain the same) ...
 type MasterDistrictRelation = { masterId: string; districtId: string; assignedAt: Date };
@@ -45,6 +46,7 @@ export class OrdersService {
 		private readonly eventEmitter: EventEmitter2,
 		private readonly amocrmSyncService: AmoCrmSyncService,
 		private readonly payoutsService: PayoutsService,
+		private readonly mapService: MapService,
 		@Inject('REDIS_CLIENT') private readonly redis: Redis, // Внедряем Redis
 	) { }
 
@@ -73,6 +75,8 @@ export class OrdersService {
 		// ... same as before
 		const isAssignedToCurrentMaster = !!currentMasterId && !!order.masterId && order.masterId === currentMasterId;
 		const price = order.price ? new Prisma.Decimal(order.price).toNumber() : null;
+		const hasCoordinates = order.lat !== null && order.lat !== undefined && order.lon !== null && order.lon !== undefined;
+		const mapUrl = hasCoordinates ? this.mapService.generateStaticMapUrl(order.lat, order.lon) : null;
 
 		const safeOrder = {
 			...order,
@@ -83,6 +87,7 @@ export class OrdersService {
 			amoPipelineId: null,
 			amoLeadId: null,
 			amoLink: null,
+			mapUrl,
 		};
 
 		return plainToInstance(OrderResponseDto, safeOrder, { excludeExtraneousValues: true });

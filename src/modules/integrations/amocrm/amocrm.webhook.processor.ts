@@ -178,6 +178,8 @@ export class AmoCrmWebhookProcessor extends WorkerHost {
 			street: address.street,
 			house: address.house || '',
 			apartment: address.flat ?? undefined,
+			geo_lat: address.geo_lat ?? undefined,
+			geo_lon: address.geo_lon ?? undefined,
 			specialtyId: specialtyId ?? undefined,
 			dispatchMode: DispatchMode.RACE,
 			clientName: parsed.clientName || 'Unknown (Amo)',

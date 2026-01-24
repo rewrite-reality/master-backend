@@ -272,6 +272,8 @@ model Order {
   city       String   @default("Chelyabinsk") // Чтобы не путать улицы
   street     String // "Ленина"
   house      String // "15а"
+  lat        Float?
+  lon        Float?
   entrance   String? // "1" (Подъезд) - нужно мастеру!
   floor      String? // "5" (Этаж) - нужно, если лифта нет
   apartment  String? // "12" (Квартира)

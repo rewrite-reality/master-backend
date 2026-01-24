@@ -62,6 +62,14 @@ export class CreateOrderDto {
 	intercom?: string;
 
 	@IsString()
+	@IsOptional()
+	geo_lat?: string;
+
+	@IsString()
+	@IsOptional()
+	geo_lon?: string;
+
+	@IsString()
 	@IsNotEmpty()
 	clientName: string;
 

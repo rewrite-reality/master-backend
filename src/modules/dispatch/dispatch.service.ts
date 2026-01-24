@@ -18,6 +18,12 @@ export class DispatchService {
 	) { }
 
 	async createOrder(dto: CreateOrderDto) {
+		const rawLat = dto.geo_lat ?? null;
+		const rawLon = dto.geo_lon ?? null;
+		const parsedLat = rawLat !== null ? Number.parseFloat(rawLat) : null;
+		const parsedLon = rawLon !== null ? Number.parseFloat(rawLon) : null;
+		const hasCoordinates = parsedLat !== null && parsedLon !== null && Number.isFinite(parsedLat) && Number.isFinite(parsedLon);
+
 		const order = await this.prisma.order.create({
 			data: {
 				amoLeadId: dto.amoLeadId ?? null,
@@ -32,6 +38,8 @@ export class DispatchService {
 				floor: dto.floor,
 				apartment: dto.apartment,
 				intercom: dto.intercom,
+				lat: hasCoordinates ? parsedLat : null,
+				lon: hasCoordinates ? parsedLon : null,
 				clientName: dto.clientName,
 				clientPhone: dto.clientPhone,
 				price: dto.price, // Prisma handles number -> Decimal conversion
