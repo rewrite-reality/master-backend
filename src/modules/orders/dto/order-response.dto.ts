@@ -9,6 +9,7 @@ import {
 	IsUUID,
 	ValidateNested,
 } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
 import { DispatchMode, OrderStatus, PaymentType } from '@prisma/client';
 
 export class OrderDistrictDto {
@@ -73,6 +74,18 @@ export class OrderResponseDto {
 	@Expose()
 	@IsString()
 	house: string;
+
+	@Expose()
+	@ApiProperty({ nullable: true })
+	@IsOptional()
+	@IsNumber()
+	lat: number | null;
+
+	@Expose()
+	@ApiProperty({ nullable: true })
+	@IsOptional()
+	@IsNumber()
+	lon: number | null;
 
 	@Expose()
 	@IsOptional()
