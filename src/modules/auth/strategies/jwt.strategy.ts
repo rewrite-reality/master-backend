@@ -32,8 +32,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 	 */
 	async validate(payload: any) {
 		// 0. Валидация структуры payload
-		if (!payload.sub || !payload.role || !payload.tgId) {
+		if (!payload?.sub || !payload?.role) {
 			this.logger.error('Invalid JWT payload structure', payload);
+			throw new UnauthorizedException('Invalid token payload');
+		}
+
+		if (payload.role === 'MASTER' && !payload.tgId) {
+			this.logger.warn('Missing tgId for master token payload');
 			throw new UnauthorizedException('Invalid token payload');
 		}
 

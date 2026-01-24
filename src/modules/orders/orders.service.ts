@@ -1,4 +1,5 @@
-﻿import {
+import {
+	BadRequestException,
 	ConflictException,
 	ForbiddenException,
 	Injectable,
@@ -23,6 +24,8 @@ import {
 import { plainToInstance } from 'class-transformer';
 import { AmoCrmSyncService } from '../integrations/amocrm/amocrm.sync.service';
 import { PayoutsService } from '../payouts/payouts.service';
+import { AdminOrdersQueryDto } from '../admin/dto/admin-orders-query.dto';
+import { AdminUpdateOrderDto } from '../admin/dto/admin-update-order.dto';
 
 // Join table types based on schema
 type MasterDistrictRelation = {
@@ -469,5 +472,191 @@ export class OrdersService {
 			status: nextStatus,
 			amoLeadId: order.amoLeadId ?? null,
 		};
+	}
+
+	private mapAdminOrder(order: OrderWithRelations) {
+		const price = order.price ? new Prisma.Decimal(order.price).toNumber() : null;
+
+		return {
+			...order,
+			price,
+			master: order.master
+				? {
+					id: order.master.id,
+					firstName: order.master.firstName,
+					lastName: order.master.lastName,
+					phone: order.master.phone,
+					status: order.master.status,
+				}
+				: null,
+		};
+	}
+
+	async findAllForAdmin(query: AdminOrdersQueryDto) {
+		const where: Prisma.OrderWhereInput = {};
+
+		if (query.status) {
+			where.status = query.status;
+		}
+
+		if (query.masterId) {
+			where.masterId = query.masterId;
+		}
+
+		if (query.districtId) {
+			where.districtId = query.districtId;
+		}
+
+		if (query.fromDate || query.toDate) {
+			const createdAtFilter: Prisma.DateTimeFilter = {};
+			if (query.fromDate) {
+				createdAtFilter.gte = query.fromDate;
+			}
+			if (query.toDate) {
+				createdAtFilter.lte = query.toDate;
+			}
+			where.createdAt = createdAtFilter;
+		}
+
+		if (query.search) {
+			const normalized = query.search.trim();
+			where.OR = [
+				{ title: { contains: normalized, mode: 'insensitive' } },
+				{ description: { contains: normalized, mode: 'insensitive' } },
+				{ clientName: { contains: normalized, mode: 'insensitive' } },
+				{ clientPhone: { contains: normalized, mode: 'insensitive' } },
+			];
+		}
+
+		const [items, total] = await Promise.all([
+			this.prisma.order.findMany({
+				where,
+				include: {
+					district: true,
+					specialty: true,
+					master: true,
+				},
+				orderBy: { createdAt: 'desc' },
+				take: query.limit,
+				skip: query.offset,
+			}),
+			this.prisma.order.count({ where }),
+		]);
+
+		return {
+			items: items.map((order) => this.mapAdminOrder(order as OrderWithRelations)),
+			total,
+			limit: query.limit,
+			offset: query.offset,
+		};
+	}
+
+	async findOneForAdmin(orderId: string) {
+		const order = await this.prisma.order.findUnique({
+			where: { id: orderId },
+			include: {
+				district: true,
+				specialty: true,
+				master: true,
+			},
+		});
+
+		if (!order) {
+			throw new NotFoundException(`Order with ID ${orderId} not found`);
+		}
+
+		return this.mapAdminOrder(order as OrderWithRelations);
+	}
+
+	async updateOrderForAdmin(orderId: string, dto: AdminUpdateOrderDto, performedByUserId: string) {
+		if (dto.price !== undefined && dto.price < 0) {
+			throw new BadRequestException('Price must be >= 0');
+		}
+
+		return this.prisma.$transaction(async (tx) => {
+			const existing = await tx.order.findUnique({
+				where: { id: orderId },
+				select: {
+					id: true,
+					status: true,
+					masterId: true,
+					amoLeadId: true,
+				},
+			});
+
+			if (!existing) {
+				throw new NotFoundException(`Order ${orderId} not found`);
+			}
+
+			let masterIdToSet: string | null | undefined;
+			if (dto.unassignMaster) {
+				masterIdToSet = null;
+			} else if (dto.masterId !== undefined) {
+				const master = await tx.masterProfile.findUnique({
+					where: { id: dto.masterId },
+					select: { id: true, status: true },
+				});
+
+				if (!master) {
+					throw new NotFoundException(`Master ${dto.masterId} not found`);
+				}
+
+				if (master.status === MasterStatus.BLOCKED) {
+					throw new ConflictException('Cannot assign blocked master');
+				}
+
+				masterIdToSet = master.id;
+			}
+
+			const data: Prisma.OrderUpdateInput = {};
+
+			if (dto.status) {
+				data.status = dto.status;
+			}
+
+			if (dto.price !== undefined) {
+				data.price = new Prisma.Decimal(dto.price).toDecimalPlaces(2);
+			}
+
+			if (masterIdToSet !== undefined) {
+				data.master = masterIdToSet === null
+					? { disconnect: true }
+					: { connect: { id: masterIdToSet } };
+			}
+
+			const updated = await tx.order.update({
+				where: { id: orderId },
+				data,
+				include: {
+					district: true,
+					specialty: true,
+					master: true,
+				},
+			});
+
+			await tx.orderLog.create({
+				data: {
+					orderId,
+					message: 'Order manually updated by admin',
+					meta: {
+						byUserId: performedByUserId,
+						changes: {
+							status: dto.status ?? updated.status,
+							price: dto.price ?? (updated.price ? new Prisma.Decimal(updated.price).toNumber() : null),
+							masterId: masterIdToSet ?? updated.masterId,
+						},
+					},
+				},
+			});
+
+			if (dto.status === OrderStatus.COMPLETED) {
+				await this.payoutsService.creditForOrderCompletion(tx, {
+					orderId,
+					performedByUserId,
+				});
+			}
+
+			return this.mapAdminOrder(updated as OrderWithRelations);
+		});
 	}
 }

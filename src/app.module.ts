@@ -17,6 +17,7 @@ import { DistrictsModule } from './modules/districts/districts.module';
 import { SpecialtiesModule } from './modules/specialties/specialties.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DevModule } from './modules/dev/dev.module';
+import { AdminModule } from './modules/admin/admin.module';
 
 @Module({
 	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, IntegrationsModule, EventsModule,
@@ -30,7 +31,8 @@ import { DevModule } from './modules/dev/dev.module';
 			delimiter: '.',
 		}),
 		DistrictsModule,
-		SpecialtiesModule],
+		SpecialtiesModule,
+		AdminModule],
 	controllers: [AppController],
 	providers: [AppService],
 })

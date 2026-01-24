@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { OrderStatus, PayoutStatus, PayoutType, Prisma } from '@prisma/client';
 
 @Injectable()
@@ -118,5 +118,118 @@ export class PayoutsService {
 		});
 
 		return { payoutId: payout.id, amount, percent };
+	}
+
+	async createManualAdjustment(
+		tx: Prisma.TransactionClient,
+		params: {
+			masterId: string;
+			orderId: string;
+			amount: number;
+			performedByUserId: string;
+			type?: PayoutType;
+			note?: string;
+			percentOverride?: number;
+			direction?: 'CREDIT' | 'DEBIT';
+		},
+	) {
+		const {
+			masterId,
+			orderId,
+			amount,
+			performedByUserId,
+			type = PayoutType.ADJUSTMENT,
+			note,
+			percentOverride,
+			direction = 'CREDIT',
+		} = params;
+
+		const normalizedAmount = new Prisma.Decimal(amount);
+
+		if (normalizedAmount.lte(0)) {
+			throw new BadRequestException('Amount must be greater than zero');
+		}
+
+		const order = await tx.order.findUnique({
+			where: { id: orderId },
+			select: {
+				id: true,
+				masterId: true,
+				price: true,
+			},
+		});
+
+		if (!order) {
+			throw new NotFoundException(`Order ${orderId} not found`);
+		}
+
+		if (order.masterId && order.masterId !== masterId) {
+			throw new ConflictException('Order is assigned to a different master');
+		}
+
+		const masterProfile = await tx.masterProfile.findUnique({
+			where: { id: masterId },
+			select: {
+				id: true,
+				payoutPercent: true,
+			},
+		});
+
+		if (!masterProfile) {
+			throw new NotFoundException(`Master profile ${masterId} not found`);
+		}
+
+		let percent = percentOverride ?? masterProfile.payoutPercent ?? 50;
+		if (percent < 1 || percent > 100) {
+			percent = 50;
+		}
+
+		const directionSign = direction === 'DEBIT' ? -1 : 1;
+		const signedAmount = normalizedAmount.mul(directionSign).toDecimalPlaces(2);
+
+		const existingPayout = await tx.payout.findUnique({
+			where: { orderId },
+		});
+
+		if (existingPayout) {
+			throw new ConflictException('Payout for this order already exists');
+		}
+
+		const payout = await tx.payout.create({
+			data: {
+				masterId,
+				orderId,
+				amount: signedAmount,
+				percent,
+				type,
+				status: PayoutStatus.POSTED,
+				meta: {
+					manual: true,
+					performedByUserId,
+					note: note ?? null,
+				},
+			},
+		});
+
+		await tx.masterProfile.update({
+			where: { id: masterId },
+			data: { balance: { increment: signedAmount } },
+		});
+
+		await tx.orderLog.create({
+			data: {
+				orderId,
+				message: 'Manual payout adjustment posted',
+				meta: {
+					payoutId: payout.id,
+					amount: signedAmount.toNumber(),
+					percent,
+					type,
+					performedByUserId,
+				},
+			},
+		});
+
+		return payout;
 	}
 }

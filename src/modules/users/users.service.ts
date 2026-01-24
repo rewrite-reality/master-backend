@@ -5,6 +5,7 @@ import {
 	ConflictException,
 	ForbiddenException,
 	Logger,
+	Inject,
 } from '@nestjs/common';
 import { Prisma, MasterStatus } from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service';
@@ -12,12 +13,26 @@ import { CreateProfileDto } from './dto/create-profile.dto';
 import { UpdateProfileDto } from './dto/update-profile.dto';
 import { plainToInstance } from 'class-transformer';
 import { BalanceResponseDto } from './dto/balance-response.dto';
+import Redis from 'ioredis';
+import { AdminMastersQueryDto } from '../admin/dto/admin-masters-query.dto';
+import { AdminUpdateMasterDto } from '../admin/dto/admin-update-master.dto';
 
 @Injectable()
 export class UsersService {
 	private readonly logger = new Logger(UsersService.name);
 
-	constructor(private readonly prisma: PrismaService) { }
+	constructor(
+		private readonly prisma: PrismaService,
+		@Inject('REDIS_CLIENT') private readonly redis: Redis,
+	) { }
+
+	private async clearUserCache(userId: string) {
+		try {
+			await this.redis.del(`user:${userId}`);
+		} catch (error) {
+			this.logger.warn(`Failed to clear cache for user ${userId}: ${(error as Error).message}`);
+		}
+	}
 
 	/**
 	 * Получить текущего пользователя (Safe Response)
@@ -387,4 +402,186 @@ export class UsersService {
 		);
 	}
 
+	async findMastersForAdmin(query: AdminMastersQueryDto) {
+		const where: Prisma.MasterProfileWhereInput = {};
+
+		if (query.status) {
+			where.status = query.status;
+		}
+
+		if (query.districtId) {
+			where.districts = { some: { districtId: query.districtId } };
+		}
+
+		if (query.search) {
+			const normalized = query.search.trim();
+			where.OR = [
+				{ firstName: { contains: normalized, mode: 'insensitive' } },
+				{ lastName: { contains: normalized, mode: 'insensitive' } },
+				{ phone: { contains: normalized, mode: 'insensitive' } },
+			];
+		}
+
+		const [items, total] = await Promise.all([
+			this.prisma.masterProfile.findMany({
+				where,
+				include: {
+					user: {
+						select: {
+							id: true,
+							email: true,
+							role: true,
+							telegramUsername: true,
+						},
+					},
+					districts: {
+						select: {
+							district: {
+								select: { id: true, name: true, city: true },
+							},
+						},
+					},
+					specialties: {
+						select: {
+							specialty: { select: { id: true, name: true, code: true } },
+						},
+					},
+					_count: { select: { orders: true } },
+				},
+				orderBy: [
+					{ lastName: 'asc' },
+					{ firstName: 'asc' },
+				],
+				take: query.limit,
+				skip: query.offset,
+			}),
+			this.prisma.masterProfile.count({ where }),
+		]);
+
+		return {
+			items: items.map((master) => ({
+				id: master.id,
+				userId: master.userId,
+				firstName: master.firstName,
+				lastName: master.lastName,
+				patronymic: master.patronymic,
+				phone: master.phone,
+				status: master.status,
+				payoutPercent: master.payoutPercent,
+				balance: new Prisma.Decimal(master.balance).toNumber(),
+				ordersCount: master._count.orders,
+				districts: master.districts.map((d) => d.district),
+				specialties: master.specialties.map((s) => s.specialty),
+				user: master.user,
+			})),
+			total,
+			limit: query.limit,
+			offset: query.offset,
+		};
+	}
+
+	async getMasterDetailForAdmin(masterId: string) {
+		const master = await this.prisma.masterProfile.findUnique({
+			where: { id: masterId },
+			include: {
+				user: {
+					select: { id: true, email: true, role: true, telegramUsername: true },
+				},
+				districts: {
+					select: {
+						district: { select: { id: true, name: true, city: true } },
+					},
+				},
+				specialties: {
+					select: {
+						specialty: { select: { id: true, name: true, code: true } },
+					},
+				},
+			},
+		});
+
+		if (!master) {
+			throw new NotFoundException(`Master ${masterId} not found`);
+		}
+
+		const [ordersCount, recentOrders] = await Promise.all([
+			this.prisma.order.count({ where: { masterId } }),
+			this.prisma.order.findMany({
+				where: { masterId },
+				include: {
+					district: true,
+					specialty: true,
+				},
+				orderBy: { createdAt: 'desc' },
+				take: 10,
+			}),
+		]);
+
+		return {
+			id: master.id,
+			user: master.user,
+			firstName: master.firstName,
+			lastName: master.lastName,
+			patronymic: master.patronymic,
+			phone: master.phone,
+			status: master.status,
+			payoutPercent: master.payoutPercent,
+			balance: new Prisma.Decimal(master.balance).toNumber(),
+			districts: master.districts.map((d) => d.district),
+			specialties: master.specialties.map((s) => s.specialty),
+			stats: {
+				orderCount: ordersCount,
+			},
+			recentOrders: recentOrders.map((order) => ({
+				id: order.id,
+				status: order.status,
+				price: order.price ? new Prisma.Decimal(order.price).toNumber() : null,
+				createdAt: order.createdAt,
+				district: order.district
+					? { id: order.district.id, name: order.district.name, city: order.district.city }
+					: null,
+				specialty: order.specialty
+					? { id: order.specialty.id, name: order.specialty.name, code: order.specialty.code }
+					: null,
+			})),
+		};
+	}
+
+	async updateMasterForAdmin(masterId: string, dto: AdminUpdateMasterDto) {
+		if (dto.payoutPercent !== undefined && (dto.payoutPercent < 1 || dto.payoutPercent > 100)) {
+			throw new BadRequestException('payoutPercent must be between 1 and 100');
+		}
+
+		const master = await this.prisma.masterProfile.findUnique({
+			where: { id: masterId },
+			select: { id: true, userId: true },
+		});
+
+		if (!master) {
+			throw new NotFoundException(`Master ${masterId} not found`);
+		}
+
+		const updated = await this.prisma.masterProfile.update({
+			where: { id: masterId },
+			data: {
+				...(dto.status ? { status: dto.status } : {}),
+				...(dto.payoutPercent !== undefined ? { payoutPercent: dto.payoutPercent } : {}),
+			},
+			include: {
+				user: {
+					select: { id: true, email: true, role: true, telegramUsername: true },
+				},
+			},
+		});
+
+		await this.clearUserCache(master.userId);
+
+		return {
+			id: updated.id,
+			status: updated.status,
+			payoutPercent: updated.payoutPercent,
+			balance: new Prisma.Decimal(updated.balance).toNumber(),
+			user: updated.user,
+		};
+	}
 }

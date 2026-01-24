@@ -5,6 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { RolesGuard } from './guards/roles.guard';
 
 /**
  * Модуль авторизации
@@ -12,29 +13,28 @@ import { JwtStrategy } from './strategies/jwt.strategy';
  */
 @Module({
 	imports: [
-		// Passport — библиотека для стратегий аутентификации
 		PassportModule.register({ defaultStrategy: 'jwt' }),
-
-		// JWT модуль с асинхронной конфигурацией (читаем секрет из .env)
 		JwtModule.registerAsync({
 			inject: [ConfigService],
 			useFactory: (config: ConfigService) => ({
-				secret: config.getOrThrow<string>('JWT_SECRET'), // Секрет для подписи токена
+				secret: config.getOrThrow<string>('JWT_SECRET'),
 				signOptions: {
-					expiresIn: '7d', // Токен живёт 7 дней
-					issuer: 'master-na-chas', // (Опционально) Кто выдал токен
+					expiresIn: '7d',
+					issuer: 'master-na-chas',
 				},
 			}),
 		}),
 	],
-	controllers: [AuthController], // HTTP эндпоинты (POST /auth/login)
+	controllers: [AuthController],
 	providers: [
-		AuthService, // Бизнес-логика авторизации
-		JwtStrategy, // Стратегия проверки токена (для Guard)
+		AuthService,
+		JwtStrategy,
+		RolesGuard,
 	],
 	exports: [
-		JwtStrategy, // Экспортируем, чтобы другие модули могли использовать @UseGuards(JwtAuthGuard)
-		PassportModule, // Экспортируем Passport на случай, если понадобится в других модулях
+		JwtStrategy,
+		PassportModule,
+		RolesGuard,
 	],
 })
 export class AuthModule { }

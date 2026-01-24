@@ -3,8 +3,8 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../../core/database/prisma.service';
 import { verifyTelegramInitData } from '../../core/telegram/init-data';
-import * as crypto from 'crypto';
 import Redis from 'ioredis';
+import * as argon2 from 'argon2';
 
 @Injectable()
 export class AuthService {
@@ -24,6 +24,45 @@ export class AuthService {
 	async invalidateUserCache(userId: string) {
 		await this.redis.del(`user:${userId}`);
 		this.logger.log(`Invalidated cache for user ${userId}`);
+	}
+
+	async validateAdmin(email: string, password: string) {
+		const normalizedEmail = email.trim().toLowerCase();
+
+		const user = await this.prisma.user.findUnique({
+			where: { email: normalizedEmail },
+		});
+
+		if (!user || user.role !== 'ADMIN' || !user.passwordHash) {
+			throw new UnauthorizedException('Invalid credentials');
+		}
+
+		const passwordValid = await argon2.verify(user.passwordHash, password);
+		if (!passwordValid) {
+			throw new UnauthorizedException('Invalid credentials');
+		}
+
+		return user;
+	}
+
+	async loginAdmin(email: string, password: string) {
+		const user = await this.validateAdmin(email, password);
+
+		const payload = {
+			sub: user.id,
+			role: user.role,
+		};
+
+		const accessToken = this.jwt.sign(payload);
+
+		return {
+			accessToken,
+			user: {
+				id: user.id,
+				role: user.role,
+				email: user.email,
+			},
+		};
 	}
 
 	/**
