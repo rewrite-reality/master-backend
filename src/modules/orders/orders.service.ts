@@ -35,7 +35,7 @@ type MasterSpecialtyRelation = { masterId: string; specialtyId: string; assigned
 type MasterProfileWithRelations = MasterProfile & { districts: MasterDistrictRelation[]; specialties: MasterSpecialtyRelation[] };
 type OrderWithRelations = Order & { district: District; specialty: Specialty | null; master: MasterProfile | null };
 
-const ACTIVE_ORDER_STATUSES: readonly OrderStatus[] = [OrderStatus.ASSIGNED, OrderStatus.ARRIVED, OrderStatus.IN_PROGRESS];
+const ACTIVE_ORDER_STATUSES: readonly OrderStatus[] = [OrderStatus.ASSIGNED, OrderStatus.ARRIVED, OrderStatus.IN_PROGRESS, OrderStatus.REVIEW];
 const HISTORY_ORDER_STATUSES: readonly OrderStatus[] = [OrderStatus.COMPLETED, OrderStatus.CANCELLED, OrderStatus.DISPUTE];
 
 @Injectable()
@@ -60,11 +60,11 @@ export class OrdersService {
 	}
 
 	private getNextStatus(status: OrderStatus): OrderStatus | null {
-		// ... same as before
 		switch (status) {
 			case OrderStatus.ASSIGNED: return OrderStatus.ARRIVED;
 			case OrderStatus.ARRIVED: return OrderStatus.IN_PROGRESS;
-			case OrderStatus.IN_PROGRESS: return OrderStatus.COMPLETED;
+			case OrderStatus.IN_PROGRESS: return OrderStatus.REVIEW;
+			case OrderStatus.REVIEW: return OrderStatus.COMPLETED;
 			default: return null;
 		}
 	}
@@ -292,6 +292,9 @@ export class OrdersService {
 
 		if (!order) throw new NotFoundException('Order not found');
 		if (order.masterId !== master.id) throw new ForbiddenException('Only the assigned master can advance this order');
+		if (order.status === OrderStatus.REVIEW) {
+			throw new ForbiddenException('Waiting for manager approval');
+		}
 
 		const nextStatus = this.getNextStatus(order.status);
 		if (!nextStatus) throw new ConflictException('Order cannot be advanced from its current status');
@@ -328,6 +331,65 @@ export class OrdersService {
 		});
 
 		return { id: orderId, status: nextStatus, amoLeadId: order.amoLeadId ?? null };
+	}
+
+	async submitForReview(orderId: string, userId: string, photoUrls: string[]): Promise<OrderResponseDto> {
+		const master = await this.getMasterProfile(userId);
+
+		if (!photoUrls || photoUrls.length === 0) {
+			throw new BadRequestException('At least one proof photo is required');
+		}
+
+		const order = await this.prisma.order.findUnique({
+			where: { id: orderId },
+			include: { district: true, specialty: true, master: true },
+		});
+
+		if (!order) {
+			throw new NotFoundException('Order not found');
+		}
+
+		if (order.masterId !== master.id) {
+			throw new ForbiddenException('Only the assigned master can submit review for this order');
+		}
+
+		if (order.status !== OrderStatus.IN_PROGRESS) {
+			throw new ConflictException('Order must be in progress before submitting for review');
+		}
+
+		const updatedOrder = await this.prisma.$transaction(async (tx) => {
+			const updated = await tx.order.update({
+				where: { id: orderId },
+				data: {
+					status: OrderStatus.REVIEW,
+					proofPhotos: photoUrls,
+					updatedAt: new Date(),
+				},
+				include: { district: true, specialty: true, master: true },
+			});
+
+			await tx.orderLog.create({
+				data: {
+					orderId,
+					message: 'Master submitted photos for review',
+					meta: { proofPhotosCount: photoUrls.length },
+				},
+			});
+
+			await this.amocrmSyncService.enqueueLeadMove(tx, {
+				orderId,
+				amoLeadId: order.amoLeadId ?? undefined,
+				orderStatus: OrderStatus.REVIEW,
+			});
+
+			// this.eventEmitter.emit('order.review_submitted', { orderId, masterId: master.id });
+
+			return updated;
+		});
+
+		await this.redis.set(`order:status:${orderId}`, OrderStatus.REVIEW, 'EX', 3600);
+
+		return this.mapToDto(updatedOrder as OrderWithRelations, master.id);
 	}
 
 	// --- ADMIN METHODS (можно оставить без изменений, там нагрузки нет) ---

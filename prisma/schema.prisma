@@ -29,9 +29,10 @@ enum OrderStatus {
   ASSIGNED // 2. Мастер найден, едет
   ARRIVED // 3. Мастер на месте (опционально)
   IN_PROGRESS // 4. Работает
-  COMPLETED // 5. Успешно завершено
-  CANCELLED // 6. Отмена клиентом/менеджером
-  DISPUTE // 7. Проблема (мастер не приехал, клиент недоволен)
+  REVIEW // 5. В ожидании проверки менеджером
+  COMPLETED // 6. Успешно завершено
+  CANCELLED // 7. Отмена клиентом/менеджером
+  DISPUTE // 8. Проблема (мастер не приехал, клиент недоволен)
 }
 
 enum DispatchMode {
@@ -285,6 +286,7 @@ model Order {
   description String      @db.Text // Подробности
   price       Decimal?    @db.Decimal(10, 2) // Цена работ (предварительная)
   paymentType PaymentType @default(CASH)
+  proofPhotos String[]    @default([])
 
   // Данные клиента (Скрыты от мастера до назначения)
   clientName  String?

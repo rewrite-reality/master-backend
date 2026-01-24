@@ -18,6 +18,7 @@ import { SpecialtiesModule } from './modules/specialties/specialties.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { DevModule } from './modules/dev/dev.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { S3Module } from './integrations/s3/s3.module';
 
 @Module({
 	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, IntegrationsModule, EventsModule,
@@ -25,6 +26,7 @@ import { AdminModule } from './modules/admin/admin.module';
 		DatabaseModule,
 		RedisModule,
 		DevModule,
+		S3Module,
 		ScheduleModule.forRoot(),
 		EventEmitterModule.forRoot({
 			wildcard: true,

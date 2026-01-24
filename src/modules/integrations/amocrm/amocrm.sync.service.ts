@@ -28,6 +28,8 @@ export class AmoCrmSyncService {
 				return 82707090; // "Мастер на месте"
 			case OrderStatus.IN_PROGRESS:
 				return 82795854; // "Работает"
+			case OrderStatus.REVIEW:
+				return 82984074; // "Работает"
 			case OrderStatus.COMPLETED:
 				return 142; // "Выполнено / Оплата получена"
 			case OrderStatus.CANCELLED:

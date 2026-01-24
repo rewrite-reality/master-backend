@@ -125,6 +125,11 @@ export class OrderResponseDto {
 
 	@Expose()
 	@IsOptional()
+	@IsString({ each: true })
+	proofPhotos: string[];
+
+	@Expose()
+	@IsOptional()
 	@IsString()
 	clientName: string | null;
 
