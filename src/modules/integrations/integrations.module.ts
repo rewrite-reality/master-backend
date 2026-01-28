@@ -12,11 +12,13 @@ import { AmoCrmSyncService } from './amocrm/amocrm.sync.service';
 import { AmoCrmSyncProcessor } from './amocrm/amocrm-sync.processor';
 import { AmoCrmSyncScheduler } from './amocrm/amocrm-sync.scheduler';
 import { AmoCrmWebhookProcessor } from './amocrm/amocrm.webhook.processor';
+import { YookassaIntegrationModule } from './yookassa/yookassa.module';
 
 @Module({
   imports: [
     ConfigModule,
     DispatchModule,
+    YookassaIntegrationModule,
     BullModule.registerQueue(
       {
         name: 'amocrm-sync',

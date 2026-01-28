@@ -5,37 +5,53 @@ import {
 	Injectable,
 	UnauthorizedException,
 } from '@nestjs/common';
-import { User, MasterProfile } from '@prisma/client';
+import { PrismaService } from '../../../core/database/prisma.service'; // Убедись в пути импорта
 
 @Injectable()
 export class MasterVerifiedGuard implements CanActivate {
-	canActivate(context: ExecutionContext): boolean {
+	constructor(private readonly prisma: PrismaService) { }
+
+	async canActivate(context: ExecutionContext): Promise<boolean> {
 		const request = context.switchToHttp().getRequest();
-		const user = request.user as User & { masterProfile?: MasterProfile };
+		const user = request.user;
 
-		if (!user) {
-			throw new UnauthorizedException('User not found');
-		}
+		// 1. Базовые проверки из токена (быстро)
+		if (!user) throw new UnauthorizedException('User not found');
+		if (user.role !== 'MASTER') throw new ForbiddenException('User is not a master');
 
-		if (user.role !== 'MASTER') {
-			throw new UnauthorizedException('User is not a master');
-		}
+		// 2. ЧЕСТНАЯ ПРОВЕРКА ЧЕРЕЗ БД (Всегда актуально)
+		// Мы берем только статус блокировки и верификации
+		const master = await this.prisma.masterProfile.findUnique({
+			where: { userId: user.id },
+			select: {
+				status: true,
+				verificationStatus: true,
+				isBlockedByDebt: true,
+			},
+		});
 
-		if (!user.masterProfile) {
+		if (!master) {
 			throw new UnauthorizedException('Master profile not found');
 		}
 
-		if (user.masterProfile.status !== 'ACTIVE') {
+		// Логируем, чтобы ты увидел в консоли реальное состояние
+		// console.log(`[Guard] Master Check: Blocked=${master.isBlockedByDebt}, Verified=${master.verificationStatus}`);
+
+		if (master.status !== 'ACTIVE') {
 			throw new UnauthorizedException('Master profile is not active');
 		}
 
-		if (user.masterProfile.verificationStatus !== 'VERIFIED') {
-			throw new UnauthorizedException('Master profile is not verified');
+		if (master.verificationStatus !== 'VERIFIED') {
+			throw new ForbiddenException('Document verification is required');
 		}
 
-		if (user.masterProfile.isBlockedByDebt) {
-			throw new ForbiddenException('Limit exceeded');
+		// Самое важное:
+		if (master.isBlockedByDebt) {
+			throw new ForbiddenException('Debt limit exceeded. Please pay the commission.');
 		}
+
+		// Обновляем профиль в реквесте, чтобы контроллер тоже получил свежие данные
+		request.user.masterProfile = { ...request.user.masterProfile, ...master };
 
 		return true;
 	}

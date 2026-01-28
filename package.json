@@ -53,6 +53,7 @@
 		"lodash": "^4.17.21",
 		"multer": "^2.0.2",
 		"nestjs-telegraf": "^2.9.1",
+		"nestjs-yookassa": "^2.3.4",
 		"passport": "^0.7.0",
 		"passport-jwt": "^4.0.1",
 		"pg": "^8.16.3",
