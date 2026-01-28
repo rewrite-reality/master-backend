@@ -19,6 +19,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { DevModule } from './modules/dev/dev.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { S3Module } from './modules/integrations/s3/s3.module';
+import { VerificationModule } from './modules/verification/verification.module';
 
 @Module({
 	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, IntegrationsModule, EventsModule,
@@ -27,6 +28,7 @@ import { S3Module } from './modules/integrations/s3/s3.module';
 		RedisModule,
 		DevModule,
 		S3Module,
+		VerificationModule,
 		ScheduleModule.forRoot(),
 		EventEmitterModule.forRoot({
 			wildcard: true,

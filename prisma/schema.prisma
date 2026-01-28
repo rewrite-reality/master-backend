@@ -24,6 +24,13 @@ enum MasterStatus {
   ON_LEAVE // В отпуске (не участвует в гонках)
 }
 
+enum VerificationStatus {
+  NONE
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
 enum OrderStatus {
   PENDING // 1. Поиск исполнителя (Race Mode)
   ASSIGNED // 2. Мастер найден, едет
@@ -199,6 +206,9 @@ model MasterProfile {
   phone      String // Телефон для связи с менеджером (не клиента!)
 
   status      MasterStatus @default(PENDING)
+  verificationStatus VerificationStatus @default(NONE)
+  documents Json @default("[]")
+  rejectionReason String?
   rating      Float        @default(5.0) // 1.0 - 5.0
   reviewCount Int          @default(0)
 
