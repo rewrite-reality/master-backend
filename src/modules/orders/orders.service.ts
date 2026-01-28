@@ -22,6 +22,7 @@ import {
   DispatchMode,
   OrderStatus,
   MasterStatus,
+  PaymentType,
 } from '@prisma/client';
 import { plainToInstance } from 'class-transformer';
 import { AmoCrmSyncService } from '../integrations/amocrm/amocrm.sync.service';
@@ -141,6 +142,46 @@ export class OrdersService {
     return plainToInstance(OrderResponseDto, safeOrder, {
       excludeExtraneousValues: true,
     });
+  }
+
+  private async completeOrder(
+    tx: Prisma.TransactionClient,
+    params: { orderId: string; performedByUserId: string; masterId: string },
+  ) {
+    const order = await tx.order.findUnique({
+      where: { id: params.orderId },
+      select: { id: true, masterId: true, paymentType: true },
+    });
+
+    if (!order) {
+      throw new NotFoundException(`Order with ID ${params.orderId} not found`);
+    }
+
+    if (!order.masterId) {
+      throw new ConflictException(
+        'Cannot complete order without assigned master',
+      );
+    }
+
+    if (order.masterId !== params.masterId) {
+      throw new ConflictException('Order is assigned to a different master');
+    }
+
+    await this.payoutsService.creditForOrderCompletion(tx, {
+      orderId: params.orderId,
+      performedByUserId: params.performedByUserId,
+    });
+
+    if (
+      order.paymentType === PaymentType.CASH ||
+      order.paymentType === PaymentType.TRANSFER
+    ) {
+      await this.payoutsService.accrueCommission(
+        tx,
+        order.id,
+        order.masterId,
+      );
+    }
   }
 
   // --- OPTIMIZED FIND METHODS ---
@@ -412,7 +453,13 @@ export class OrdersService {
     const master = await this.getMasterProfile(userId);
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { id: true, status: true, masterId: true, amoLeadId: true },
+      select: {
+        id: true,
+        status: true,
+        masterId: true,
+        amoLeadId: true,
+        paymentType: true,
+      },
     });
 
     if (!order) throw new NotFoundException('Order not found');
@@ -452,9 +499,10 @@ export class OrdersService {
       });
 
       if (nextStatus === OrderStatus.COMPLETED) {
-        await this.payoutsService.creditForOrderCompletion(tx, {
+        await this.completeOrder(tx, {
           orderId,
           performedByUserId: userId,
+          masterId: master.id,
         });
       }
 
@@ -720,9 +768,18 @@ export class OrdersService {
       });
 
       if (dto.status === OrderStatus.COMPLETED) {
-        await this.payoutsService.creditForOrderCompletion(tx, {
+        const completionMasterId = updated.masterId;
+
+        if (!completionMasterId) {
+          throw new ConflictException(
+            'Cannot complete order without assigned master',
+          );
+        }
+
+        await this.completeOrder(tx, {
           orderId,
           performedByUserId,
+          masterId: completionMasterId,
         });
       }
 

@@ -17,6 +17,8 @@ import Redis from 'ioredis';
 import { AdminMastersQueryDto } from '../admin/dto/admin-masters-query.dto';
 import { AdminUpdateMasterDto } from '../admin/dto/admin-update-master.dto';
 
+const DEFAULT_DEBT_LIMIT = new Prisma.Decimal(5000);
+
 @Injectable()
 export class UsersService {
   private readonly logger = new Logger(UsersService.name);
@@ -37,7 +39,7 @@ export class UsersService {
   }
 
   /**
-   * Получить текущего пользователя (Safe Response)
+   * Get current user (Safe Response)
    */
   async getMe(userId: string) {
     const user = await this.prisma.user.findUnique({
@@ -54,6 +56,9 @@ export class UsersService {
             patronymic: true,
             phone: true,
             status: true,
+            debt: true,
+            debtLimit: true,
+            isBlockedByDebt: true,
             districts: {
               select: {
                 district: {
@@ -78,7 +83,37 @@ export class UsersService {
       throw new NotFoundException('User not found');
     }
 
-    // Возвращаем безопасную проекцию (без passwordHash и системных полей)
+    const finance = user.masterProfile
+      ? (() => {
+          const debtDecimal = new Prisma.Decimal(
+            user.masterProfile.debt ?? 0,
+          ).toDecimalPlaces(2);
+          const rawLimit = new Prisma.Decimal(
+            user.masterProfile.debtLimit ?? 0,
+          ).toDecimalPlaces(2);
+          const limitDecimal = rawLimit.gt(0) ? rawLimit : DEFAULT_DEBT_LIMIT;
+          const usagePercentDecimal = limitDecimal.gt(0)
+            ? debtDecimal.mul(100).div(limitDecimal)
+            : new Prisma.Decimal(0);
+          const usagePercent = Number(usagePercentDecimal.toDecimalPlaces(0));
+          const statusColor =
+            usagePercent >= 100
+              ? 'red'
+              : usagePercent >= 80
+                ? 'orange'
+                : 'green';
+
+          return {
+            debt: debtDecimal.toNumber(),
+            limit: limitDecimal.toNumber(),
+            usagePercent,
+            isBlocked: user.masterProfile.isBlockedByDebt,
+            statusColor,
+          };
+        })()
+      : null;
+
+    // Return a safe projection (without passwordHash or system fields)
     return {
       id: user.id,
       role: user.role,
@@ -91,6 +126,7 @@ export class UsersService {
             patronymic: user.masterProfile.patronymic,
             phone: user.masterProfile.phone,
             status: user.masterProfile.status,
+            finance,
             districts: user.masterProfile.districts.map((d) => d.district),
             specialties: user.masterProfile.specialties.map((s) => s.specialty),
           }
