@@ -2,7 +2,7 @@
 /dist
 /node_modules
 /build
-
+/.tmp-yookassa
 # Logs
 logs
 *.log
