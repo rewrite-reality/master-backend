@@ -1,4 +1,3 @@
-
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TelegrafModule } from 'nestjs-telegraf';
@@ -12,24 +11,24 @@ import { OrderAssignedListener } from './listeners/order-assigned.listener';
 import { PrismaService } from '../../core/database/prisma.service';
 
 @Module({
-	imports: [
-		DispatchModule,
-		TelegrafModule.forRootAsync({
-			imports: [ConfigModule],
-			useFactory: (configService: ConfigService) => ({
-				token: configService.get<string>('TELEGRAM_BOT_TOKEN') || '',
-			}),
-			inject: [ConfigService],
-		}),
-	],
-	controllers: [NotificationsController],
-	providers: [
-		NotificationsService,
-		TelegramService,
-		TelegramUpdate,
-		OrderCreatedListener,
-		OrderAssignedListener,
-		PrismaService,
-	],
+  imports: [
+    DispatchModule,
+    TelegrafModule.forRootAsync({
+      imports: [ConfigModule],
+      useFactory: (configService: ConfigService) => ({
+        token: configService.get<string>('TELEGRAM_BOT_TOKEN') || '',
+      }),
+      inject: [ConfigService],
+    }),
+  ],
+  controllers: [NotificationsController],
+  providers: [
+    NotificationsService,
+    TelegramService,
+    TelegramUpdate,
+    OrderCreatedListener,
+    OrderAssignedListener,
+    PrismaService,
+  ],
 })
-export class NotificationsModule { }
+export class NotificationsModule {}

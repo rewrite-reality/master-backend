@@ -1,181 +1,212 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { MasterProfile, Prisma, VerificationStatus, MasterStatus } from '@prisma/client';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import {
+  MasterProfile,
+  Prisma,
+  VerificationStatus,
+  MasterStatus,
+} from '@prisma/client';
 import { PrismaService } from '../../core/database/prisma.service';
 import { S3Service } from '../integrations/s3/s3.service';
 import { Express } from 'express';
 
 @Injectable()
 export class VerificationService {
-	constructor(
-		private readonly prisma: PrismaService,
-		private readonly s3Service: S3Service,
-	) { }
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly s3Service: S3Service,
+  ) {}
 
-	private async getMasterProfileByUserId(userId: string) {
-		const master = await this.prisma.masterProfile.findUnique({
-			where: { userId },
-			select: {
-				id: true,
-				verificationStatus: true,
-				rejectionReason: true,
-				status: true,
-				documents: true,
-			},
-		});
+  private async getMasterProfileByUserId(userId: string) {
+    const master = await this.prisma.masterProfile.findUnique({
+      where: { userId },
+      select: {
+        id: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        status: true,
+        documents: true,
+      },
+    });
 
-		if (!master) {
-			throw new NotFoundException('Профиль мастера не найден');
-		}
+    if (!master) {
+      throw new NotFoundException('Профиль мастера не найден');
+    }
 
-		return master;
-	}
+    return master;
+  }
 
-	private async getMasterProfileById(masterId: string) {
-		const master = await this.prisma.masterProfile.findUnique({
-			where: { id: masterId },
-			select: {
-				id: true,
-				verificationStatus: true,
-				rejectionReason: true,
-				status: true,
-				documents: true,
-			},
-		});
+  private async getMasterProfileById(masterId: string) {
+    const master = await this.prisma.masterProfile.findUnique({
+      where: { id: masterId },
+      select: {
+        id: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        status: true,
+        documents: true,
+      },
+    });
 
-		if (!master) {
-			throw new NotFoundException('Мастер не найден');
-		}
+    if (!master) {
+      throw new NotFoundException('Мастер не найден');
+    }
 
-		return master;
-	}
+    return master;
+  }
 
-	private extractDocuments(documents: Prisma.JsonValue | null): string[] {
-		if (!Array.isArray(documents)) {
-			return [];
-		}
-		return documents.filter((item): item is string => typeof item === 'string');
-	}
+  private extractDocuments(documents: Prisma.JsonValue | null): string[] {
+    if (!Array.isArray(documents)) {
+      return [];
+    }
+    return documents.filter((item): item is string => typeof item === 'string');
+  }
 
-	async uploadDocument(userId: string, file: Express.Multer.File) {
-		if (!file) {
-			throw new BadRequestException('Файл обязателен');
-		}
+  async uploadDocument(userId: string, file: Express.Multer.File) {
+    if (!file) {
+      throw new BadRequestException('Файл обязателен');
+    }
 
-		const master = await this.getMasterProfileByUserId(userId);
+    const master = await this.getMasterProfileByUserId(userId);
 
-		// Запрещаем загрузку, если мастер уже верифицирован (чтобы не подменил доки после апрува)
-		if (master.verificationStatus === VerificationStatus.VERIFIED) {
-			throw new ConflictException('Документы уже проверены, изменение запрещено');
-		}
+    // Запрещаем загрузку, если мастер уже верифицирован (чтобы не подменил доки после апрува)
+    if (master.verificationStatus === VerificationStatus.VERIFIED) {
+      throw new ConflictException(
+        'Документы уже проверены, изменение запрещено',
+      );
+    }
 
-		const url = await this.s3Service.uploadFile(file, `verification/${master.id}`);
-		const documents = this.extractDocuments(master.documents);
-		documents.push(url);
+    const url = await this.s3Service.uploadFile(
+      file,
+      `verification/${master.id}`,
+    );
+    const documents = this.extractDocuments(master.documents);
+    documents.push(url);
 
-		await this.prisma.masterProfile.update({
-			where: { id: master.id },
-			data: { documents },
-		});
+    await this.prisma.masterProfile.update({
+      where: { id: master.id },
+      data: { documents },
+    });
 
-		return {
-			masterId: master.id,
-			url,
-			documentsCount: documents.length,
-			verificationStatus: master.verificationStatus,
-		};
-	}
+    return {
+      masterId: master.id,
+      url,
+      documentsCount: documents.length,
+      verificationStatus: master.verificationStatus,
+    };
+  }
 
-	async submitVerification(userId: string) {
-		const master = await this.getMasterProfileByUserId(userId);
-		const documents = this.extractDocuments(master.documents);
+  async submitVerification(userId: string) {
+    const master = await this.getMasterProfileByUserId(userId);
+    const documents = this.extractDocuments(master.documents);
 
-		if (documents.length < 2) {
-			throw new BadRequestException('Нужно минимум 2 файла для отправки на проверку');
-		}
+    if (documents.length < 2) {
+      throw new BadRequestException(
+        'Нужно минимум 2 файла для отправки на проверку',
+      );
+    }
 
-		if (master.verificationStatus === VerificationStatus.VERIFIED) {
-			throw new ConflictException('Профиль уже верифицирован');
-		}
+    if (master.verificationStatus === VerificationStatus.VERIFIED) {
+      throw new ConflictException('Профиль уже верифицирован');
+    }
 
-		if (master.verificationStatus === VerificationStatus.PENDING) {
-			throw new ConflictException('Заявка уже находится на рассмотрении');
-		}
+    if (master.verificationStatus === VerificationStatus.PENDING) {
+      throw new ConflictException('Заявка уже находится на рассмотрении');
+    }
 
-		const updated = await this.prisma.masterProfile.update({
-			where: { id: master.id },
-			data: {
-				verificationStatus: VerificationStatus.PENDING,
-				rejectionReason: null,
-			},
-			select: {
-				id: true,
-				verificationStatus: true,
-				rejectionReason: true,
-			},
-		});
+    const updated = await this.prisma.masterProfile.update({
+      where: { id: master.id },
+      data: {
+        verificationStatus: VerificationStatus.PENDING,
+        rejectionReason: null,
+      },
+      select: {
+        id: true,
+        verificationStatus: true,
+        rejectionReason: true,
+      },
+    });
 
-		return updated;
-	}
+    return updated;
+  }
 
-	async getStatus(userId: string) {
-		const master = await this.getMasterProfileByUserId(userId);
-		return {
-			verificationStatus: master.verificationStatus,
-			rejectionReason: master.rejectionReason,
-			documentsCount: this.extractDocuments(master.documents).length,
-		};
-	}
+  async getStatus(userId: string) {
+    const master = await this.getMasterProfileByUserId(userId);
+    return {
+      verificationStatus: master.verificationStatus,
+      rejectionReason: master.rejectionReason,
+      documentsCount: this.extractDocuments(master.documents).length,
+    };
+  }
 
-	/**
-	 * Метод проверки менеджером. 
-	 * Автоматически активирует мастера (MasterStatus.ACTIVE), если верификация успешна.
-	 */
-	async review(masterId: string, status: VerificationStatus, rejectionReason?: string) {
-		const master = await this.getMasterProfileById(masterId);
+  /**
+   * Метод проверки менеджером.
+   * Автоматически активирует мастера (MasterStatus.ACTIVE), если верификация успешна.
+   */
+  async review(
+    masterId: string,
+    status: VerificationStatus,
+    rejectionReason?: string,
+  ) {
+    const master = await this.getMasterProfileById(masterId);
 
-		// Валидация входных данных
-		if (status === VerificationStatus.PENDING || status === VerificationStatus.NONE) {
-			throw new BadRequestException('Менеджер может установить только VERIFIED или REJECTED');
-		}
+    // Валидация входных данных
+    if (
+      status === VerificationStatus.PENDING ||
+      status === VerificationStatus.NONE
+    ) {
+      throw new BadRequestException(
+        'Менеджер может установить только VERIFIED или REJECTED',
+      );
+    }
 
-		if (status === VerificationStatus.REJECTED && !rejectionReason) {
-			throw new BadRequestException('При отказе (REJECTED) обязательно укажите причину');
-		}
+    if (status === VerificationStatus.REJECTED && !rejectionReason) {
+      throw new BadRequestException(
+        'При отказе (REJECTED) обязательно укажите причину',
+      );
+    }
 
-		// Логика переключения глобального статуса (MasterStatus)
-		let newMasterStatus: MasterStatus | undefined = undefined;
+    // Логика переключения глобального статуса (MasterStatus)
+    let newMasterStatus: MasterStatus | undefined = undefined;
 
-		if (status === VerificationStatus.VERIFIED) {
-			// Если одобрили доки -> Активируем мастера полностью
-			// (Но только если он не был забанен вручную за жесткие нарушения)
-			if (master.status !== MasterStatus.BLOCKED) {
-				newMasterStatus = MasterStatus.ACTIVE;
-			}
-		} else if (status === VerificationStatus.REJECTED) {
-			// Если отклонили -> Возвращаем в PENDING (не даем работать), но не баним навечно
-			if (master.status !== MasterStatus.BLOCKED) {
-				newMasterStatus = MasterStatus.PENDING;
-			}
-		}
+    if (status === VerificationStatus.VERIFIED) {
+      // Если одобрили доки -> Активируем мастера полностью
+      // (Но только если он не был забанен вручную за жесткие нарушения)
+      if (master.status !== MasterStatus.BLOCKED) {
+        newMasterStatus = MasterStatus.ACTIVE;
+      }
+    } else if (status === VerificationStatus.REJECTED) {
+      // Если отклонили -> Возвращаем в PENDING (не даем работать), но не баним навечно
+      if (master.status !== MasterStatus.BLOCKED) {
+        newMasterStatus = MasterStatus.PENDING;
+      }
+    }
 
-		const data: Prisma.MasterProfileUpdateInput = {
-			verificationStatus: status,
-			rejectionReason: status === VerificationStatus.REJECTED ? (rejectionReason?.trim() || null) : null,
-			// Применяем изменение статуса, только если оно вычислено
-			...(newMasterStatus && { status: newMasterStatus }),
-		};
+    const data: Prisma.MasterProfileUpdateInput = {
+      verificationStatus: status,
+      rejectionReason:
+        status === VerificationStatus.REJECTED
+          ? rejectionReason?.trim() || null
+          : null,
+      // Применяем изменение статуса, только если оно вычислено
+      ...(newMasterStatus && { status: newMasterStatus }),
+    };
 
-		const updated = await this.prisma.masterProfile.update({
-			where: { id: master.id },
-			data,
-			select: {
-				id: true,
-				verificationStatus: true,
-				rejectionReason: true,
-				status: true, // Возвращаем, чтобы менеджер видел результат
-			},
-		});
+    const updated = await this.prisma.masterProfile.update({
+      where: { id: master.id },
+      data,
+      select: {
+        id: true,
+        verificationStatus: true,
+        rejectionReason: true,
+        status: true, // Возвращаем, чтобы менеджер видел результат
+      },
+    });
 
-		return updated;
-	}
+    return updated;
+  }
 }

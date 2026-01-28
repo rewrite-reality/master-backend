@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { UsersService } from '../users/users.service';
 import { PayoutsService } from '../payouts/payouts.service';
@@ -15,46 +24,46 @@ import { AdminManualPayoutDto } from './dto/admin-manual-payout.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 export class AdminMastersController {
-	constructor(
-		private readonly usersService: UsersService,
-		private readonly payoutsService: PayoutsService,
-		private readonly prisma: PrismaService,
-	) { }
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly payoutsService: PayoutsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
-	@Get()
-	async list(@Query() query: AdminMastersQueryDto) {
-		return this.usersService.findMastersForAdmin(query);
-	}
+  @Get()
+  async list(@Query() query: AdminMastersQueryDto) {
+    return this.usersService.findMastersForAdmin(query);
+  }
 
-	@Get(':id')
-	async detail(@Param('id') id: string) {
-		return this.usersService.getMasterDetailForAdmin(id);
-	}
+  @Get(':id')
+  async detail(@Param('id') id: string) {
+    return this.usersService.getMasterDetailForAdmin(id);
+  }
 
-	@Patch(':id')
-	async update(@Param('id') id: string, @Body() dto: AdminUpdateMasterDto) {
-		return this.usersService.updateMasterForAdmin(id, dto);
-	}
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() dto: AdminUpdateMasterDto) {
+    return this.usersService.updateMasterForAdmin(id, dto);
+  }
 
-	@Post(':id/payout')
-	async manualPayout(
-		@Param('id') masterId: string,
-		@Body() dto: AdminManualPayoutDto,
-		@CurrentUser() user: { id: string },
-	) {
-		const performedByUserId = user?.id ?? 'system';
+  @Post(':id/payout')
+  async manualPayout(
+    @Param('id') masterId: string,
+    @Body() dto: AdminManualPayoutDto,
+    @CurrentUser() user: { id: string },
+  ) {
+    const performedByUserId = user?.id ?? 'system';
 
-		return this.prisma.$transaction((tx) =>
-			this.payoutsService.createManualAdjustment(tx, {
-				masterId,
-				orderId: dto.orderId,
-				amount: dto.amount,
-				type: dto.type,
-				percentOverride: dto.percent,
-				note: dto.note,
-				direction: dto.direction ?? 'CREDIT',
-				performedByUserId,
-			}),
-		);
-	}
+    return this.prisma.$transaction((tx) =>
+      this.payoutsService.createManualAdjustment(tx, {
+        masterId,
+        orderId: dto.orderId,
+        amount: dto.amount,
+        type: dto.type,
+        percentOverride: dto.percent,
+        note: dto.note,
+        direction: dto.direction ?? 'CREDIT',
+        performedByUserId,
+      }),
+    );
+  }
 }

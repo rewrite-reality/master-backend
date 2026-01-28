@@ -1,12 +1,12 @@
 import { IsBoolean, IsString, IsUUID } from 'class-validator';
 
 export class AcceptOrderResponseDto {
-	@IsBoolean()
-	success: boolean;
+  @IsBoolean()
+  success: boolean;
 
-	@IsUUID()
-	orderId: string;
+  @IsUUID()
+  orderId: string;
 
-	@IsString()
-	message: string;
+  @IsString()
+  message: string;
 }

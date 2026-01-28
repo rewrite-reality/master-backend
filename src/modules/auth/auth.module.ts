@@ -12,29 +12,21 @@ import { RolesGuard } from './guards/roles.guard';
  * Отвечает за вход через Telegram Mini App и защиту роутов через JWT
  */
 @Module({
-	imports: [
-		PassportModule.register({ defaultStrategy: 'jwt' }),
-		JwtModule.registerAsync({
-			inject: [ConfigService],
-			useFactory: (config: ConfigService) => ({
-				secret: config.getOrThrow<string>('JWT_SECRET'),
-				signOptions: {
-					expiresIn: '7d',
-					issuer: 'master-na-chas',
-				},
-			}),
-		}),
-	],
-	controllers: [AuthController],
-	providers: [
-		AuthService,
-		JwtStrategy,
-		RolesGuard,
-	],
-	exports: [
-		JwtStrategy,
-		PassportModule,
-		RolesGuard,
-	],
+  imports: [
+    PassportModule.register({ defaultStrategy: 'jwt' }),
+    JwtModule.registerAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        secret: config.getOrThrow<string>('JWT_SECRET'),
+        signOptions: {
+          expiresIn: '7d',
+          issuer: 'master-na-chas',
+        },
+      }),
+    }),
+  ],
+  controllers: [AuthController],
+  providers: [AuthService, JwtStrategy, RolesGuard],
+  exports: [JwtStrategy, PassportModule, RolesGuard],
 })
-export class AuthModule { }
+export class AuthModule {}

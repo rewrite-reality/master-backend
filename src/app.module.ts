@@ -8,7 +8,6 @@ import { OrdersModule } from './modules/orders/orders.module';
 import { DispatchModule } from './modules/dispatch/dispatch.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { IntegrationsModule } from './modules/integrations/integrations.module';
-import { EventsModule } from './events/events.module';
 import { ConfigModule } from './core/config/config.module';
 import { DatabaseModule } from './core/database/database.module';
 import { EventEmitterModule } from '@nestjs/event-emitter';
@@ -22,22 +21,30 @@ import { S3Module } from './modules/integrations/s3/s3.module';
 import { VerificationModule } from './modules/verification/verification.module';
 
 @Module({
-	imports: [CoreModule, AuthModule, UsersModule, OrdersModule, DispatchModule, NotificationsModule, IntegrationsModule, EventsModule,
-		ConfigModule,
-		DatabaseModule,
-		RedisModule,
-		DevModule,
-		S3Module,
-		VerificationModule,
-		ScheduleModule.forRoot(),
-		EventEmitterModule.forRoot({
-			wildcard: true,
-			delimiter: '.',
-		}),
-		DistrictsModule,
-		SpecialtiesModule,
-		AdminModule],
-	controllers: [AppController],
-	providers: [AppService],
+  imports: [
+    CoreModule,
+    AuthModule,
+    UsersModule,
+    OrdersModule,
+    DispatchModule,
+    NotificationsModule,
+    IntegrationsModule,
+    ConfigModule,
+    DatabaseModule,
+    RedisModule,
+    DevModule,
+    S3Module,
+    VerificationModule,
+    ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot({
+      wildcard: true,
+      delimiter: '.',
+    }),
+    DistrictsModule,
+    SpecialtiesModule,
+    AdminModule,
+  ],
+  controllers: [AppController],
+  providers: [AppService],
 })
-export class AppModule { }
+export class AppModule {}

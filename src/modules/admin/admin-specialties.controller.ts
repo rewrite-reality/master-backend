@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  UseGuards,
+} from '@nestjs/common';
 import { Role } from '@prisma/client';
 import { SpecialtiesService } from '../specialties/specialties.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -11,25 +20,25 @@ import { UpdateSpecialtyDto } from './dto/update-specialty.dto';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 export class AdminSpecialtiesController {
-	constructor(private readonly specialtiesService: SpecialtiesService) { }
+  constructor(private readonly specialtiesService: SpecialtiesService) {}
 
-	@Get()
-	async list() {
-		return this.specialtiesService.findAllAdmin();
-	}
+  @Get()
+  async list() {
+    return this.specialtiesService.findAllAdmin();
+  }
 
-	@Post()
-	async create(@Body() dto: CreateSpecialtyDto) {
-		return this.specialtiesService.createSpecialty(dto);
-	}
+  @Post()
+  async create(@Body() dto: CreateSpecialtyDto) {
+    return this.specialtiesService.createSpecialty(dto);
+  }
 
-	@Patch(':id')
-	async update(@Param('id') id: string, @Body() dto: UpdateSpecialtyDto) {
-		return this.specialtiesService.updateSpecialty(id, dto);
-	}
+  @Patch(':id')
+  async update(@Param('id') id: string, @Body() dto: UpdateSpecialtyDto) {
+    return this.specialtiesService.updateSpecialty(id, dto);
+  }
 
-	@Delete(':id')
-	async remove(@Param('id') id: string) {
-		return this.specialtiesService.softDeleteSpecialty(id);
-	}
+  @Delete(':id')
+  async remove(@Param('id') id: string) {
+    return this.specialtiesService.softDeleteSpecialty(id);
+  }
 }

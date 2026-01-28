@@ -5,10 +5,10 @@ import { SpecialtiesService } from './specialties.service';
 @ApiTags('Specialties')
 @Controller('specialties')
 export class SpecialtiesController {
-	constructor(private readonly specialtiesService: SpecialtiesService) { }
+  constructor(private readonly specialtiesService: SpecialtiesService) {}
 
-	@Get()
-	findAll() {
-		return this.specialtiesService.findAll();
-	}
+  @Get()
+  findAll() {
+    return this.specialtiesService.findAll();
+  }
 }

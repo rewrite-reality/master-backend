@@ -9,10 +9,10 @@ import { AdminStatsService } from './admin-stats.service';
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 export class AdminStatsController {
-	constructor(private readonly adminStatsService: AdminStatsService) { }
+  constructor(private readonly adminStatsService: AdminStatsService) {}
 
-	@Get()
-	async getDashboard() {
-		return this.adminStatsService.getDashboard();
-	}
+  @Get()
+  async getDashboard() {
+    return this.adminStatsService.getDashboard();
+  }
 }

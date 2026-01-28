@@ -7,9 +7,9 @@ import { UsersController } from './users.controller';
  * Отвечает за профиль, настройки и привязку районов
  */
 @Module({
-	imports: [], // Внешних модулей не нужно (Prisma глобальная)
-	controllers: [UsersController],
-	providers: [UsersService],
-	exports: [UsersService], // Экспортируем сервис, чтобы AuthModule мог проверять профиль при логине (если понадобится)
+  imports: [], // Внешних модулей не нужно (Prisma глобальная)
+  controllers: [UsersController],
+  providers: [UsersService],
+  exports: [UsersService], // Экспортируем сервис, чтобы AuthModule мог проверять профиль при логине (если понадобится)
 })
-export class UsersModule { }
+export class UsersModule {}

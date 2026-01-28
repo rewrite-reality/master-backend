@@ -1,15 +1,15 @@
 import { validate, parse } from '@tma.js/init-data-node';
 
 function getBotToken() {
-	const token =
-		process.env.TELEGRAM_BOT_TOKEN ||
-		process.env.BOT_TOKEN; // fallback, если где-то старое имя
+  const token = process.env.TELEGRAM_BOT_TOKEN || process.env.BOT_TOKEN; // fallback, если где-то старое имя
 
-	if (!token) {
-		throw new Error('Bot token not configured. Set TELEGRAM_BOT_TOKEN (or BOT_TOKEN).');
-	}
+  if (!token) {
+    throw new Error(
+      'Bot token not configured. Set TELEGRAM_BOT_TOKEN (or BOT_TOKEN).',
+    );
+  }
 
-	return token;
+  return token;
 }
 
 /**
@@ -17,7 +17,7 @@ function getBotToken() {
  * Бросает исключение при неверной подписи.
  */
 export function verifyTelegramInitData(initData: string) {
-	const token = getBotToken();
-	validate(initData, token);
-	return parse(initData);
+  const token = getBotToken();
+  validate(initData, token);
+  return parse(initData);
 }

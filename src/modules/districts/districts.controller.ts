@@ -5,10 +5,10 @@ import { DistrictsService } from './districts.service';
 @ApiTags('Districts')
 @Controller('districts')
 export class DistrictsController {
-	constructor(private readonly districtsService: DistrictsService) { }
+  constructor(private readonly districtsService: DistrictsService) {}
 
-	@Get()
-	findAll() {
-		return this.districtsService.findAll();
-	}
+  @Get()
+  findAll() {
+    return this.districtsService.findAll();
+  }
 }

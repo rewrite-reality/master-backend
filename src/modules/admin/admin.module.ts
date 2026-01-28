@@ -13,21 +13,21 @@ import { AdminStatsController } from './admin-stats.controller';
 import { AdminStatsService } from './admin-stats.service';
 
 @Module({
-	imports: [
-		AuthModule,
-		UsersModule,
-		OrdersModule,
-		DistrictsModule,
-		SpecialtiesModule,
-		PayoutsModule,
-	],
-	controllers: [
-		AdminMastersController,
-		AdminOrdersController,
-		AdminDistrictsController,
-		AdminSpecialtiesController,
-		AdminStatsController,
-	],
-	providers: [AdminStatsService],
+  imports: [
+    AuthModule,
+    UsersModule,
+    OrdersModule,
+    DistrictsModule,
+    SpecialtiesModule,
+    PayoutsModule,
+  ],
+  controllers: [
+    AdminMastersController,
+    AdminOrdersController,
+    AdminDistrictsController,
+    AdminSpecialtiesController,
+    AdminStatsController,
+  ],
+  providers: [AdminStatsService],
 })
-export class AdminModule { }
+export class AdminModule {}

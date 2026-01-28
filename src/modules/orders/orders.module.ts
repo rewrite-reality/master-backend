@@ -6,9 +6,9 @@ import { PayoutsModule } from '../payouts/payouts.module';
 import { MapService } from '../../core/utils/map.service';
 
 @Module({
-	imports: [IntegrationsModule, PayoutsModule],
-	controllers: [OrdersController],
-	providers: [OrdersService, MapService],
-	exports: [OrdersService],
+  imports: [IntegrationsModule, PayoutsModule],
+  controllers: [OrdersController],
+  providers: [OrdersService, MapService],
+  exports: [OrdersService],
 })
-export class OrdersModule { }
+export class OrdersModule {}

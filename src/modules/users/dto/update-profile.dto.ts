@@ -4,4 +4,4 @@ import { CreateProfileDto } from './create-profile.dto';
 /**
  * DTO для обновления профиля (все поля опциональны)
  */
-export class UpdateProfileDto extends PartialType(CreateProfileDto) { }
+export class UpdateProfileDto extends PartialType(CreateProfileDto) {}

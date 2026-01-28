@@ -8,17 +8,20 @@ import { AdminLoginDto } from './dto/admin-login.dto';
  */
 @Controller('auth')
 export class AuthController {
-	constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService) {}
 
-	@Post('login')
-	@HttpCode(HttpStatus.OK)
-	async login(@Body() loginDto: LoginDto) {
-		return this.authService.login(loginDto.initData);
-	}
+  @Post('login')
+  @HttpCode(HttpStatus.OK)
+  async login(@Body() loginDto: LoginDto) {
+    return this.authService.login(loginDto.initData);
+  }
 
-	@Post('admin/login')
-	@HttpCode(HttpStatus.OK)
-	async loginAdmin(@Body() adminLoginDto: AdminLoginDto) {
-		return this.authService.loginAdmin(adminLoginDto.email, adminLoginDto.password);
-	}
+  @Post('admin/login')
+  @HttpCode(HttpStatus.OK)
+  async loginAdmin(@Body() adminLoginDto: AdminLoginDto) {
+    return this.authService.loginAdmin(
+      adminLoginDto.email,
+      adminLoginDto.password,
+    );
+  }
 }

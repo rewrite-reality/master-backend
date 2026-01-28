@@ -14,27 +14,30 @@ import { AmoCrmSyncScheduler } from './amocrm/amocrm-sync.scheduler';
 import { AmoCrmWebhookProcessor } from './amocrm/amocrm.webhook.processor';
 
 @Module({
-	imports: [
-		ConfigModule,
-		DispatchModule,
-		BullModule.registerQueue({
-			name: 'amocrm-sync',
-		}, {
-			name: 'amocrm-webhooks',
-		}),
-	],
-	controllers: [AmoCrmController],
-	providers: [
-		IdempotencyService,
-		DadataService,
-		AmoCrmService,
-		AmoCrmMapper,
-		AmoCrmApiService,
-		AmoCrmSyncService,
-		AmoCrmSyncProcessor,
-		AmoCrmSyncScheduler,
-		AmoCrmWebhookProcessor,
-	],
-	exports: [DadataService, IdempotencyService, AmoCrmSyncService],
+  imports: [
+    ConfigModule,
+    DispatchModule,
+    BullModule.registerQueue(
+      {
+        name: 'amocrm-sync',
+      },
+      {
+        name: 'amocrm-webhooks',
+      },
+    ),
+  ],
+  controllers: [AmoCrmController],
+  providers: [
+    IdempotencyService,
+    DadataService,
+    AmoCrmService,
+    AmoCrmMapper,
+    AmoCrmApiService,
+    AmoCrmSyncService,
+    AmoCrmSyncProcessor,
+    AmoCrmSyncScheduler,
+    AmoCrmWebhookProcessor,
+  ],
+  exports: [DadataService, IdempotencyService, AmoCrmSyncService],
 })
-export class IntegrationsModule { }
+export class IntegrationsModule {}
