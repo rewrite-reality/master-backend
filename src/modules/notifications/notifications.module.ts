@@ -9,26 +9,28 @@ import { TelegramUpdate } from './telegram/telegram.update';
 import { OrderCreatedListener } from './listeners/order-created.listener';
 import { OrderAssignedListener } from './listeners/order-assigned.listener';
 import { PrismaService } from '../../core/database/prisma.service';
+import { OrdersModule } from '../orders/orders.module';
 
 @Module({
-  imports: [
-    DispatchModule,
-    TelegrafModule.forRootAsync({
-      imports: [ConfigModule],
-      useFactory: (configService: ConfigService) => ({
-        token: configService.get<string>('TELEGRAM_BOT_TOKEN') || '',
-      }),
-      inject: [ConfigService],
-    }),
-  ],
-  controllers: [NotificationsController],
-  providers: [
-    NotificationsService,
-    TelegramService,
-    TelegramUpdate,
-    OrderCreatedListener,
-    OrderAssignedListener,
-    PrismaService,
-  ],
+	imports: [
+		DispatchModule,
+		OrdersModule,
+		TelegrafModule.forRootAsync({
+			imports: [ConfigModule],
+			useFactory: (configService: ConfigService) => ({
+				token: configService.get<string>('TELEGRAM_BOT_TOKEN') || '',
+			}),
+			inject: [ConfigService],
+		}),
+	],
+	controllers: [NotificationsController],
+	providers: [
+		NotificationsService,
+		TelegramService,
+		TelegramUpdate,
+		OrderCreatedListener,
+		OrderAssignedListener,
+		PrismaService,
+	],
 })
-export class NotificationsModule {}
+export class NotificationsModule { }

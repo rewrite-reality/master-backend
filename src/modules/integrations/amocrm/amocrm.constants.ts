@@ -15,5 +15,5 @@ export const AMO_SPECIALTY_MAP: Record<number, string> = {
 export const AMO_PAYMENT_MAP: Record<number, string> = {
 	1390733: 'CASH',       // "Наличные"
 	1390735: 'TRANSFER',   // "Перевод"
-	1390737: 'CARD',       // "Карта"
+	1390737: 'CARD_ONLINE',       // "Карта"
 };
