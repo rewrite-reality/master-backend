@@ -499,10 +499,10 @@ export class PayoutsService {
         type: TransactionType.DEBT_PAYMENT,
         externalPaymentId: paymentId,
       },
-      select: { id: true },
+      select: { id: true, status: true },
     });
 
-    if (existingPayment) {
+    if (existingPayment?.status === TransactionStatus.SUCCESS) {
       const currentProfile = await tx.masterProfile.findUnique({
         where: { id: masterId },
         select: { debt: true },
@@ -515,15 +515,25 @@ export class PayoutsService {
       return { debt: currentProfile.debt };
     }
 
-    await tx.transaction.create({
-      data: {
-        masterId,
-        type: TransactionType.DEBT_PAYMENT,
-        amount: normalizedAmount,
-        status: TransactionStatus.SUCCESS,
-        externalPaymentId: paymentId,
-      },
-    });
+    if (existingPayment) {
+      await tx.transaction.update({
+        where: { id: existingPayment.id },
+        data: {
+          status: TransactionStatus.SUCCESS,
+          amount: normalizedAmount.toDecimalPlaces(2),
+        },
+      });
+    } else {
+      await tx.transaction.create({
+        data: {
+          masterId,
+          type: TransactionType.DEBT_PAYMENT,
+          amount: normalizedAmount.toDecimalPlaces(2),
+          status: TransactionStatus.SUCCESS,
+          externalPaymentId: paymentId,
+        },
+      });
+    }
 
     const updatedProfile = await tx.masterProfile.update({
       where: { id: masterId },
