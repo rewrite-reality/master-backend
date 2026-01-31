@@ -45,11 +45,6 @@ export class MasterVerifiedGuard implements CanActivate {
 			throw new ForbiddenException('Document verification is required');
 		}
 
-		// Самое важное:
-		if (master.isBlockedByDebt) {
-			throw new ForbiddenException('Debt limit exceeded. Please pay the commission.');
-		}
-
 		// Обновляем профиль в реквесте, чтобы контроллер тоже получил свежие данные
 		request.user.masterProfile = { ...request.user.masterProfile, ...master };
 

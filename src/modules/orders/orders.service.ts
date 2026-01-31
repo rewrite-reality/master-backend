@@ -341,6 +341,11 @@ export class OrdersService {
     userId: string,
   ): Promise<AcceptOrderResponseDto> {
     const master = await this.getMasterProfile(userId);
+    if (master.isBlockedByDebt) {
+      throw new ForbiddenException(
+        'Debt limit exceeded. Please pay the commission.',
+      );
+    }
 
     // 1. HOT CACHE CHECK (Redis)
     // Проверяем статус в Redis перед тем как идти в БД.
