@@ -1,9 +1,22 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
+import { Queue } from 'bullmq';
 import { PrismaService } from '../../../core/database/prisma.service';
 import { DispatchService } from '../../dispatch/dispatch.service';
-import { TelegramService } from '../telegram/telegram.service';
 import { OrderCreatedEvent } from '../../dispatch/events/order-created.event';
+
+type NotifyNewOrderJobData = {
+  telegramId: string;
+  order: {
+    id: string;
+    title: string;
+    districtName: string;
+    specialtyName: string;
+    price: number;
+    scheduledAt: string | null;
+  };
+};
 
 @Injectable()
 export class OrderCreatedListener {
@@ -11,8 +24,9 @@ export class OrderCreatedListener {
 
   constructor(
     private readonly dispatchService: DispatchService,
-    private readonly telegramService: TelegramService,
     private readonly prisma: PrismaService,
+    @InjectQueue('notifications')
+    private readonly notificationsQueue: Queue<NotifyNewOrderJobData>,
   ) {}
 
   @OnEvent('order.created')
@@ -52,26 +66,41 @@ export class OrderCreatedListener {
         districtName: order.district.name,
         specialtyName: order.specialty?.name || 'Общая',
         price: Number(order.price),
-        scheduledAt: order.scheduledAt,
+        scheduledAt: order.scheduledAt ? order.scheduledAt.toISOString() : null,
       };
 
-      // 3. Notify each master
-      let sentCount = 0;
+      // 3. Queue notifications for each master
+      const jobs: Array<{
+        name: 'notify-new-order';
+        data: NotifyNewOrderJobData;
+        opts: { jobId: string };
+      }> = [];
+
       for (const master of masters) {
-        if (master.user && master.user.telegramId) {
-          // Convert BigInt to number if needed, assuming telegramId is stored as BigInt but needed as number by Telegraf
-          // Prisma BigInt is usually handled, checking schema would be good but standard approach:
-          const telegramId = Number(master.user.telegramId);
-          await this.telegramService.sendOrderNotification(
-            telegramId,
-            orderData,
-          );
-          sentCount++;
+        if (
+          master.user?.telegramId !== null &&
+          master.user?.telegramId !== undefined
+        ) {
+          const telegramId = String(master.user.telegramId);
+          jobs.push({
+            name: 'notify-new-order',
+            data: { telegramId, order: orderData },
+            opts: { jobId: `notify-new-order-${order.id}-${telegramId}` },
+          });
         }
       }
 
+      if (jobs.length === 0) {
+        this.logger.log(
+          `[OrderCreatedListener] No telegram IDs found for order ${event.orderId}`,
+        );
+        return;
+      }
+
+      await this.notificationsQueue.addBulk(jobs);
+
       this.logger.log(
-        `[OrderCreatedListener] Sent notifications to ${sentCount} masters for order ${event.orderId}`,
+        `[OrderCreatedListener] Queued ${jobs.length} notifications for order ${event.orderId}`,
       );
     } catch (error) {
       this.logger.error(

@@ -1,7 +1,7 @@
 import {
-	Injectable,
-	ExecutionContext,
-	UnauthorizedException,
+  Injectable,
+  ExecutionContext,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 
@@ -13,22 +13,22 @@ import { AuthGuard } from '@nestjs/passport';
  */
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
-	/**
-	 * Можно переопределить метод handleRequest, чтобы кастомизировать ошибку
-	 * или поведение (например, сделать опциональную авторизацию).
-	 */
-	handleRequest(err: any, user: any, info: any) {
-		// info содержит причину ошибки от passport-jwt (например, "jwt expired")
+  /**
+   * Можно переопределить метод handleRequest, чтобы кастомизировать ошибку
+   * или поведение (например, сделать опциональную авторизацию).
+   */
+  handleRequest(err: any, user: any, info: any) {
+    // info содержит причину ошибки от passport-jwt (например, "jwt expired")
 
-		if (err || !user) {
-			// Если есть конкретная ошибка jwt (истек, неверная подпись) — прокидываем её сообщение
-			// Но для безопасности продакшена лучше не раскрывать детали, а просто писать "Unauthorized"
+    if (err || !user) {
+      // Если есть конкретная ошибка jwt (истек, неверная подпись) — прокидываем её сообщение
+      // Но для безопасности продакшена лучше не раскрывать детали, а просто писать "Unauthorized"
 
-			// Логируем для отладки, если нужно (но тут нет Logger по дефолту, можно добавить)
+      // Логируем для отладки, если нужно (но тут нет Logger по дефолту, можно добавить)
 
-			throw err || new UnauthorizedException('Unauthorized');
-		}
+      throw err || new UnauthorizedException('Unauthorized');
+    }
 
-		return user;
-	}
+    return user;
+  }
 }

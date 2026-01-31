@@ -176,11 +176,7 @@ export class OrdersService {
       order.paymentType === PaymentType.CASH ||
       order.paymentType === PaymentType.TRANSFER
     ) {
-      await this.payoutsService.accrueCommission(
-        tx,
-        order.id,
-        order.masterId,
-      );
+      await this.payoutsService.accrueCommission(tx, order.id, order.masterId);
     }
   }
 

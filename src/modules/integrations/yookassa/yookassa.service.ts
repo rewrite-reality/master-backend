@@ -99,7 +99,10 @@ export class YookassaService {
           {
             description: 'Commission payment',
             quantity: 1,
-            amount: { value: amountDecimal.toNumber(), currency: CurrencyEnum.RUB },
+            amount: {
+              value: amountDecimal.toNumber(),
+              currency: CurrencyEnum.RUB,
+            },
             vat_code: VatCodesEnum.NDS_NONE,
             payment_mode: 'full_payment',
             payment_subject: 'service',

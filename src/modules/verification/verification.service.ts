@@ -81,7 +81,7 @@ export class VerificationService {
       await this.s3Service.deleteFilesByUrls(documents);
     } catch (error) {
       this.logger.warn(
-        `Failed to delete verification documents from S3 for master ${masterId}` ,
+        `Failed to delete verification documents from S3 for master ${masterId}`,
       );
     }
   }
@@ -248,7 +248,6 @@ export class VerificationService {
         );
       }
     }
-
 
     const updated = await this.prisma.masterProfile.update({
       where: { id: master.id },

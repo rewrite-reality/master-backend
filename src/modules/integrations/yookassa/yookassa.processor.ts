@@ -22,7 +22,9 @@ export class YookassaProcessor extends WorkerHost {
     const { paymentId, trigger = 'manual', attempt = 0 } = job.data || {};
 
     if (!paymentId) {
-      this.logger.warn(`Received YooKassa sync job ${job.id} without paymentId`);
+      this.logger.warn(
+        `Received YooKassa sync job ${job.id} without paymentId`,
+      );
       return;
     }
 

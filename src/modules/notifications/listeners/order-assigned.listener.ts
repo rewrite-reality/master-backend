@@ -1,18 +1,29 @@
+import { InjectQueue } from '@nestjs/bullmq';
 import { Injectable, Logger } from '@nestjs/common';
 import { OnEvent } from '@nestjs/event-emitter';
-import { PrismaService } from '../../../core/database/prisma.service';
-import { TelegramService } from '../telegram/telegram.service';
-import { OrderAssignedEvent } from '../../orders/events/order-assigned.event';
 import { ConfigService } from '@nestjs/config';
+import { Queue } from 'bullmq';
+import { PrismaService } from '../../../core/database/prisma.service';
+import { OrderAssignedEvent } from '../../orders/events/order-assigned.event';
+
+type NotifyOrderAssignedJobData = {
+  telegramId: string;
+  order: {
+    id: string;
+    title: string;
+  };
+  masterName: string;
+};
 
 @Injectable()
 export class OrderAssignedListener {
   private readonly logger = new Logger(OrderAssignedListener.name);
 
   constructor(
-    private readonly telegramService: TelegramService,
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
+    @InjectQueue('notifications')
+    private readonly notificationsQueue: Queue<NotifyOrderAssignedJobData>,
   ) {}
 
   @OnEvent('order.assigned')
@@ -36,17 +47,29 @@ export class OrderAssignedListener {
         'MANAGER_TELEGRAM_ID',
       );
 
-      if (managerTelegramId) {
-        const masterName = order.master.user.email || `ID ${order.master.id}`;
-        await this.telegramService.sendOrderAssignedNotification(
-          Number(managerTelegramId),
-          { id: order.id, title: order.title },
-          masterName,
+      if (!managerTelegramId) {
+        this.logger.warn(
+          `[OrderAssignedListener] MANAGER_TELEGRAM_ID is not configured`,
         );
-        this.logger.log(
-          `[OrderAssignedListener] Notified manager about order ${order.id}`,
-        );
+        return;
       }
+
+      const masterName = order.master.user.email || `ID ${order.master.id}`;
+      const telegramId = String(managerTelegramId);
+
+      await this.notificationsQueue.add(
+        'notify-order-assigned',
+        {
+          telegramId,
+          order: { id: order.id, title: order.title },
+          masterName,
+        },
+        { jobId: `notify-order-assigned-${order.id}-${telegramId}` },
+      );
+
+      this.logger.log(
+        `[OrderAssignedListener] Queued manager notification for order ${order.id}`,
+      );
     } catch (error) {
       this.logger.error(
         `[OrderAssignedListener] Error handling order.assigned: ${
