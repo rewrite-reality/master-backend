@@ -87,16 +87,28 @@ export class VerificationService {
     const documents = this.extractDocuments(master.documents);
     documents.push(url);
 
+    const nextStatus =
+      master.verificationStatus === VerificationStatus.REJECTED
+        ? VerificationStatus.NONE
+        : master.verificationStatus;
+
     await this.prisma.masterProfile.update({
       where: { id: master.id },
-      data: { documents },
+      data: {
+        documents,
+        verificationStatus: nextStatus,
+        rejectionReason:
+          master.verificationStatus === VerificationStatus.REJECTED
+            ? null
+            : master.rejectionReason,
+      },
     });
 
     return {
       masterId: master.id,
       url,
       documentsCount: documents.length,
-      verificationStatus: master.verificationStatus,
+      verificationStatus: nextStatus,
     };
   }
 
