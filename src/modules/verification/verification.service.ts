@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -16,6 +17,8 @@ import { Express } from 'express';
 
 @Injectable()
 export class VerificationService {
+  private readonly logger = new Logger(VerificationService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly s3Service: S3Service,
@@ -66,6 +69,23 @@ export class VerificationService {
     return documents.filter((item): item is string => typeof item === 'string');
   }
 
+  private async deleteVerificationDocumentsFromS3(
+    masterId: string,
+    documents: string[],
+  ) {
+    if (documents.length === 0) {
+      return;
+    }
+
+    try {
+      await this.s3Service.deleteFilesByUrls(documents);
+    } catch (error) {
+      this.logger.warn(
+        `Failed to delete verification documents from S3 for master ${masterId}` ,
+      );
+    }
+  }
+
   async uploadDocument(userId: string, file: Express.Multer.File) {
     if (!file) {
       throw new BadRequestException('Файл обязателен');
@@ -80,11 +100,20 @@ export class VerificationService {
       );
     }
 
+    const documents = this.extractDocuments(master.documents);
+
+    if (
+      master.verificationStatus === VerificationStatus.REJECTED &&
+      documents.length > 0
+    ) {
+      await this.deleteVerificationDocumentsFromS3(master.id, documents);
+      documents.length = 0;
+    }
+
     const url = await this.s3Service.uploadFile(
       file,
       `verification/${master.id}`,
     );
-    const documents = this.extractDocuments(master.documents);
     documents.push(url);
 
     const nextStatus =
@@ -165,6 +194,7 @@ export class VerificationService {
     rejectionReason?: string,
   ) {
     const master = await this.getMasterProfileById(masterId);
+    const documents = this.extractDocuments(master.documents);
 
     // Валидация входных данных
     if (
@@ -204,9 +234,21 @@ export class VerificationService {
         status === VerificationStatus.REJECTED
           ? rejectionReason?.trim() || null
           : null,
+      ...(status === VerificationStatus.REJECTED && { documents: [] }),
       // Применяем изменение статуса, только если оно вычислено
       ...(newMasterStatus && { status: newMasterStatus }),
     };
+
+    if (status === VerificationStatus.REJECTED && documents.length > 0) {
+      try {
+        await this.s3Service.deleteFilesByUrls(documents);
+      } catch (error) {
+        this.logger.warn(
+          `Failed to delete verification documents from S3 for master ${master.id}`,
+        );
+      }
+    }
+
 
     const updated = await this.prisma.masterProfile.update({
       where: { id: master.id },

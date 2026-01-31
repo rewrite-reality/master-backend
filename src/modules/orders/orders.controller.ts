@@ -24,7 +24,7 @@ import { Express } from 'express';
 import * as multer from 'multer';
 
 @Controller('orders')
-@UseGuards(JwtAuthGuard, MasterVerifiedGuard)
+@UseGuards(JwtAuthGuard)
 export class OrdersController {
 	constructor(
 		private readonly ordersService: OrdersService,

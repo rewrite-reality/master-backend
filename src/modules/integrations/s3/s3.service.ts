@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { extname } from 'path';
@@ -58,6 +58,55 @@ export class S3Service {
         error?.stack || error?.message || String(error),
       );
       throw error;
+    }
+  }
+
+  async deleteFilesByUrls(urls: string[]): Promise<number> {
+    const keys = urls
+      .map((url) => this.extractKeyFromUrl(url))
+      .filter((key): key is string => Boolean(key));
+
+    const uniqueKeys = Array.from(new Set(keys));
+    if (uniqueKeys.length === 0) {
+      return 0;
+    }
+
+    try {
+      await this.s3Client.send(
+        new DeleteObjectsCommand({
+          Bucket: this.bucketName,
+          Delete: {
+            Objects: uniqueKeys.map((key) => ({ Key: key })),
+            Quiet: true,
+          },
+        }),
+      );
+
+      return uniqueKeys.length;
+    } catch (error: any) {
+      this.logger.error(
+        `Failed to delete ${uniqueKeys.length} file(s) from S3`,
+        error?.stack || error?.message || String(error),
+      );
+      throw error;
+    }
+  }
+
+  private extractKeyFromUrl(url: string): string | null {
+    if (!url) {
+      return null;
+    }
+
+    if (url.startsWith(`${this.publicBaseUrl}/`)) {
+      return url.slice(this.publicBaseUrl.length + 1);
+    }
+
+    try {
+      const parsed = new URL(url);
+      const pathname = parsed.pathname?.replace(/^\/+/, '') ?? '';
+      return pathname || null;
+    } catch {
+      return null;
     }
   }
 }
