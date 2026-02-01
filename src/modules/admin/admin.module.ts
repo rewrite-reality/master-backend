@@ -11,6 +11,8 @@ import { AdminDistrictsController } from './admin-districts.controller';
 import { AdminSpecialtiesController } from './admin-specialties.controller';
 import { AdminStatsController } from './admin-stats.controller';
 import { AdminStatsService } from './admin-stats.service';
+import { AdminVerificationController } from './admin-verification.controller';
+import { AdminVerificationService } from './admin-verification.service';
 
 @Module({
   imports: [
@@ -27,7 +29,8 @@ import { AdminStatsService } from './admin-stats.service';
     AdminDistrictsController,
     AdminSpecialtiesController,
     AdminStatsController,
+    AdminVerificationController,
   ],
-  providers: [AdminStatsService],
+  providers: [AdminStatsService, AdminVerificationService],
 })
 export class AdminModule {}
